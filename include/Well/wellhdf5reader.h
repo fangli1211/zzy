@@ -1,0 +1,113 @@
+#pragma once
+/*+
+________________________________________________________________________
+
+ Copyright:	(C) 1995-2024 dGB Beheer B.V.
+ License:	https://dgbes.com/licensing
+________________________________________________________________________
+
+-*/
+
+#include "wellmod.h"
+
+#include "wellreadaccess.h"
+#include "hdf5reader.h"
+#include "uistring.h"
+#include "iopar.h"
+
+class IOObj;
+
+
+namespace Well
+{
+
+class HDF5Writer;
+
+
+/*!\brief stuff common to HDF5 well reader and writer  */
+
+mExpClass(Well) HDF5Access
+{
+public:
+
+    static bool			isParallelEnabled();
+
+    static const char*		sTrackGrpName();
+    static const char*		sLogsGrpName();
+    static const char*		sMarkersGrpName();
+    static const char*		sTDsGrpName();
+    static const char*		sCSsGrpName();
+    static const char*		sDispParsGrpName();
+
+    static const char*		sCoordsDSName();
+    static const char*		sMDsDSName();
+    static const char*		sTWTsDSName();
+    static const char*		sValuesDSName();
+    static const char*		sNamesDSName();
+    static const char*		sColorsDSName();
+    static const char*		sLvlIDsDSName();
+
+    static const char*		sKeyLogDel();
+
+    static const char*		sKeyLastLogID();
+};
+
+
+/*!\brief Reads Well::Data from HDF5 file  */
+
+mExpClass(Well) HDF5Reader : public ReadAccess
+			   , public HDF5Access
+{ mODTextTranslationClass(Well::HDF5Reader)
+public:
+
+			HDF5Reader(const IOObj&,Data&,uiString& errmsg);
+			HDF5Reader(const char* fnm,Data&,uiString& errmsg);
+			HDF5Reader(const HDF5Writer&,Data&,uiString& errmsg);
+			~HDF5Reader();
+
+private:
+    bool		canReadInParallel() const override;
+
+    bool		get() const override		{ return true; }
+
+    bool		getInfo() const override;
+    bool		getTrack() const override;
+    bool		getMarkers() const override;
+
+    bool		getD2T() const override;
+    bool		getCSMdl() const override;
+
+    bool		getLogs(bool needjustinfo) const override;
+    bool		getLog(const char* lognm) const override;
+    bool		getLogByID(const LogID&) const override;
+    bool		getDefLogs() const override;
+
+    bool		getDispProps() const override;
+
+    const		uiString& errMsg() const override    { return errmsg_; }
+
+    void		init(const char*);
+    bool		ensureFileOpen() const;
+    bool		doGetD2T(bool) const;
+    bool		getLogPars(const HDF5::DataSetKey&,IOPar&) const;
+    bool		addLog(const HDF5::DataSetKey&,Log* newlog=nullptr,
+			       bool needjustinfo=false) const;
+    bool		readLogData(const HDF5::DataSetKey&,Log&) const;
+
+
+    static Log*		rdLogHdr(const IOPar&,int idx);
+
+    uiString&		errmsg_;
+    PtrMan<HDF5::Reader> rdr_;
+    BufferStringSet	loggrps_;
+    mutable IOPar	infoiop_;
+    mutable Threads::Lock lock_;
+
+};
+
+
+#define mErrRetIfUiRvNotOK(dsky) \
+    if ( !uirv.isOK() ) \
+	{ errmsg_.set( uirv ); return false; }
+
+} // namespace Well

@@ -1,0 +1,176 @@
+#pragma once
+/*+
+________________________________________________________________________
+
+ Copyright:	(C) 1995-2022 dGB Beheer B.V.
+ License:	https://dgbes.com/licensing
+________________________________________________________________________
+
+-*/
+
+#include "earthmodelmod.h"
+
+#include "emobject.h"
+#include "rowcolsurface.h"
+
+template <class T, class AT> class TopList;
+
+
+class RowCol;
+class ZAxisTransform;
+
+
+namespace Geometry { class RowColSurface; }
+
+
+namespace EM
+{
+class Surface;
+class SurfaceIODataSelection;
+
+/*!
+\brief Surface geometry
+*/
+
+mExpClass(EarthModel) SurfaceGeometry : public CallBacker
+{ mODTextTranslationClass(SurfaceGeometry);
+public:
+			~SurfaceGeometry();
+
+    virtual void	removeAll();
+    virtual bool	enableChecks(bool yn);
+    virtual bool	isChecksEnabled() const;
+    virtual bool	isNodeOK(const PosID&) const;
+
+    virtual const Geometry::Element*	geometryElement() const;
+    virtual Geometry::Element*		geometryElement();
+
+    virtual int		getConnectedPos(const PosID& posid,
+					TypeSet<PosID>* res) const;
+			/*!<\returns the number of connected pos. */
+    virtual void	getLinkedPos(const PosID& posid,TypeSet<PosID>&) const;
+    virtual bool	isAtEdge(const PosID&) const;
+
+    bool		isChanged(int) const		{ return changed_; }
+    void		resetChangedFlag()		{ changed_=false; }
+
+    virtual bool	isLoaded() const;
+    virtual bool	isFullResolution() const;
+    virtual Task*	loader(const SurfaceIODataSelection* =nullptr);
+    virtual Task*	saver(const SurfaceIODataSelection* =nullptr,
+			      const MultiID* =nullptr);
+
+    virtual int		findPos(const Interval<float>& x,
+				const Interval<float>& y,
+				const Interval<float>& z,TypeSet<PosID>*) const;
+    virtual int		findPos(const TrcKeyZSampling&,TypeSet<PosID>*) const;
+
+    virtual EMObjectIterator*	createIterator(const TrcKeyZSampling* =0) const
+				{ return nullptr; }
+
+    virtual bool	usePar(const IOPar&);
+    virtual void	fillPar(IOPar&) const;
+
+protected:
+				SurfaceGeometry(Surface&);
+
+    virtual Geometry::Element*		createGeometryElement() const = 0;
+    void				geomChangeCB(CallBacker*);
+
+    Surface&				surface_;
+    ObjectSet<Geometry::Element>	sections_;
+
+    bool				changed_;
+
+public:
+// Deprecated public functions
+    mDeprecatedDef
+    virtual int		findPos(const SectionID&,const Interval<float>& x,
+				const Interval<float>& y,
+				const Interval<float>& z,
+				TypeSet<PosID>* res) const;
+
+    mDeprecated("Use createIterator(const TrcKeyZSampling*)")
+    EMObjectIterator*		createIterator(const EM::SectionID&,
+				    const TrcKeyZSampling* tkzs=nullptr) const
+				{ return createIterator( tkzs ); }
+
+    mDeprecatedObs
+    int			nrSections() const;
+    mDeprecatedObs
+    SectionID		sectionID(int idx) const;
+    mDeprecatedObs
+    SectionID		sectionID(const char*) const;
+    mDeprecatedObs
+    bool		hasSection(const SectionID&) const;
+    mDeprecatedObs
+    int			sectionIndex(const SectionID&) const;
+    mDeprecatedObs
+    const char*		sectionName(const SectionID&) const;
+    mDeprecatedObs
+    bool		setSectionName(const SectionID&,const char*,
+				       bool addtohistory);
+    mDeprecatedObs
+    SectionID		addSection(const char* nm,bool addtohistory);
+    mDeprecatedObs
+    SectionID		addSection(const char* nm,const SectionID&,
+				   bool addtohistory);
+			/*!<Return false if the sectionid allready exists */
+    mDeprecatedObs
+    virtual bool	removeSection(const SectionID&,bool addtohistory);
+    mDeprecatedObs
+    virtual SectionID	cloneSection(const SectionID&);
+
+    mDeprecated("Use geometryElement() const")
+    virtual const Geometry::Element*	sectionGeometry(const SectionID&) const;
+    mDeprecated("Use geometryElement()")
+    virtual Geometry::Element*		sectionGeometry(const SectionID&);
+
+protected:
+
+// Deprecated public functions
+    mDeprecatedObs
+    SectionID		addSectionInternal(Geometry::Element*,
+					   const char* nm,const SectionID&,
+					   bool addtohistory);
+};
+
+
+/*!
+\brief RowCol SurfaceGeometry
+*/
+
+mExpClass(EarthModel) RowColSurfaceGeometry : public SurfaceGeometry
+{ mODTextTranslationClass(RowColSurfaceGeometry);
+public:
+			RowColSurfaceGeometry(Surface&);
+			~RowColSurfaceGeometry();
+
+
+    const Geometry::RowColSurface* geometryElement() const override;
+    Geometry::RowColSurface*	geometryElement() override;
+
+    StepInterval<int>		rowRange() const;
+    StepInterval<int>		colRange() const;
+    StepInterval<int>		colRange(int row) const;
+
+    EMObjectIterator*	createIterator(
+				const TrcKeyZSampling* =nullptr) const override;
+
+public:
+// Deprecated public functions
+mStartAllowDeprecatedSection
+    mDeprecated("Use geometryElement() const")
+    const Geometry::RowColSurface* sectionGeometry(
+					const SectionID&) const override;
+    mDeprecated("Use geometryElement()")
+    Geometry::RowColSurface*	sectionGeometry(const SectionID&) override;
+mStopAllowDeprecatedSection
+
+    mDeprecated("Use without SectionID")
+    StepInterval<int>		rowRange(const SectionID&) const;
+    mDeprecated("Use without SectionID")
+    StepInterval<int>		colRange(const SectionID&,int row) const;
+};
+
+} // namespace EM

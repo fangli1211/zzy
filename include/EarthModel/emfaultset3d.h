@@ -1,0 +1,64 @@
+#pragma once
+/*+
+________________________________________________________________________
+
+ Copyright:	(C) 1995-2022 dGB Beheer B.V.
+ License:	https://dgbes.com/licensing
+________________________________________________________________________
+
+-*/
+
+#include "emfault3d.h"
+
+namespace EM
+{
+
+/*!
+\brief 3D FaultSet
+*/
+
+mExpClass(EarthModel) FaultSet3D : public EMObject
+{ mDefineEMObjFuncs( FaultSet3D );
+public:
+
+    FaultSet3D&			operator =(const FaultSet3D&);
+
+    uiString			getUserTypeStr() const override;
+
+    int				nrFaults() const;
+    FaultID			getFaultID(int idx) const;
+
+    FaultID			addFault(RefMan<Fault3D>);
+    bool			addFault(RefMan<Fault3D>,FaultID);
+    bool			removeFault(FaultID);
+
+
+    RefMan<Fault3D>		getFault3D(FaultID);
+    ConstRefMan<Fault3D>	getFault3D(FaultID) const;
+
+    Task*			loader() override;
+    virtual Task*		saver() override;
+
+    EMObjectIterator*		createIterator(
+				 const TrcKeyZSampling* =nullptr) const override
+				{ return nullptr; }
+    const TrcKeyZSampling&	getEnvelope() const { return tkzsenvelope_; }
+    void			setEnvelope(const TrcKeyZSampling&);
+
+    void			convertZValues(const UnitOfMeasure*, bool,
+					       bool parallel=true) override;
+
+protected:
+
+    const IOObjContext&		getIOObjContext() const override;
+    int				indexOf(FaultID) const;
+
+    friend class		ObjectManager;
+
+    RefObjectSet<Fault3D>	faults_;
+    TypeSet<FaultID>		ids_;
+    int				curidnr_ = 0;
+    TrcKeyZSampling		tkzsenvelope_;
+};
+
+} // namespace EM

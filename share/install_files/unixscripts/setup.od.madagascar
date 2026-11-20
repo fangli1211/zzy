@@ -1,0 +1,12 @@
+#!/bin/csh -f
+#________________________________________________________________________
+#
+# Copyright:    (C) 1995-2022 dGB Beheer B.V.
+# License:      https://dgbes.com/licensing
+#________________________________________________________________________
+#
+# MADAGASCAR setup
+#
+
+sed -e "s/__INST_DIR__/$replaceinstdir/" .odinit.madagascar > odinit.madagascar
+chmod +x odinit.madagascar

@@ -1,0 +1,22 @@
+#!/bin/csh -f
+#________________________________________________________________________
+#
+# Copyright:    (C) 1995-2022 dGB Beheer B.V.
+# License:      https://dgbes.com/licensing
+#________________________________________________________________________
+#
+# Sets the HDIR and binsubdir variables for this platform
+#
+
+setenv HDIR `uname`
+
+if ( "$HDIR" == "Linux" ) then
+    setenv HDIR lux
+    setenv binsubdir lux64
+else if ( "$HDIR" == "Darwin" ) then
+    setenv HDIR mac
+    setenv binsubdir mac
+else
+    echo "This platform is not supported: ${HDIR}"
+endif
+

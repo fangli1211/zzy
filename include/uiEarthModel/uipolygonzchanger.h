@@ -1,0 +1,56 @@
+#pragma once
+/*+
+________________________________________________________________________
+
+ Copyright:	(C) 1995-2022 dGB Beheer B.V.
+ License:	https://dgbes.com/licensing
+________________________________________________________________________
+
+-*/
+
+#include "uiearthmodelmod.h"
+#include "uidialog.h"
+#include "uieditpicks.h"
+
+#include "pickset.h"
+#include "uigeninput.h"
+#include "uiioobjsel.h"
+
+
+namespace EM { class PolygonZChanger; }
+namespace Pick { class Set; }
+
+
+mExpClass(uiEarthModel) uiPolygonZChanger : public uiDialog
+{ mODTextTranslationClass(uiPolygonZChanger)
+public:
+			uiPolygonZChanger(uiParent*,Pick::Set&);
+			~uiPolygonZChanger();
+
+protected:
+    bool		acceptOK(CallBacker*) override;
+    void		changeZvalCB(CallBacker*);
+    bool		applyZChanges(EM::PolygonZChanger&);
+
+    uiGenInput*		isconstzfld_;
+    uiGenInput*		zvalfld_;
+    uiIOObjSel*		horinpfld_;
+    Pick::Set&		set_;
+};
+
+mExpClass(uiEarthModel) uiEditPolygonDlg : public uiEditPicksDlg
+{ mODTextTranslationClass(uiEditPolygonDlg)
+public:
+
+			uiEditPolygonDlg(uiParent*,Pick::Set&);
+			~uiEditPolygonDlg();
+
+    static uiEditPicksDlg*  create( uiParent* p, Pick::Set& ps )
+			    { return new uiEditPolygonDlg(p,ps); }
+    static void		    initClass();
+
+private:
+
+    void		chgZCB(CallBacker*);
+
+};

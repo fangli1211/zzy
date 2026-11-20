@@ -1,0 +1,83 @@
+#pragma once
+/*+
+________________________________________________________________________
+
+ Copyright:	(C) 1995-2022 dGB Beheer B.V.
+ License:	https://dgbes.com/licensing
+________________________________________________________________________
+
+-*/
+
+#include "uitoolsmod.h"
+#include "uidialog.h"
+#include "uigraphicsview.h"
+#include "uistring.h"
+
+namespace ColTab{ class Sequence; }
+class MouseEventHandler;
+class uiGraphicsItemGroup;
+class uiTable;
+class uiParent;
+class uiWorld2Ui;
+
+
+mExpClass(uiTools) uiColTabMarkerDlg : public uiDialog
+{ mODTextTranslationClass(uiColTabMarkerDlg);
+public:
+				uiColTabMarkerDlg(uiParent*,ColTab::Sequence&);
+				~uiColTabMarkerDlg();
+
+    Notifier<uiColTabMarkerDlg>	markersChanged;
+
+protected:
+
+    uiTable*			table_;
+    ColTab::Sequence&		ctab_;
+
+    void			fillTable();
+    void			rebuildColTab();
+    int				reverseIdx(int);
+    void			mouseClickCB(CallBacker*);
+    void			markerInsertedCB(CallBacker*);
+    void			markerDeletedCB(CallBacker*);
+    void			markerPosChgdCB(CallBacker*);
+    bool			acceptOK(CallBacker*) override;
+
+};
+
+
+mExpClass(uiTools) uiColTabMarkerCanvas : public uiGraphicsView
+{ mODTextTranslationClass(uiColTabMarkerCanvas);
+public:
+				uiColTabMarkerCanvas(uiParent*,
+						     ColTab::Sequence&);
+				uiColTabMarkerCanvas(uiParent*,
+						     ColTab::Sequence&,
+						     const Interval<float>);
+				~uiColTabMarkerCanvas();
+
+    Notifier<uiColTabMarkerCanvas> markerChanged;
+    void			setRange(const Interval<float>);
+    void			markerChgdCB(CallBacker*);
+
+protected:
+
+    uiWorld2Ui*                 w2ui_;
+    uiParent*	                parent_;
+    uiGraphicsItemGroup*	markerlineitmgrp_;;
+    int		                selidx_;
+    ColTab::Sequence&           ctab_;
+    MouseEventHandler&		meh_;
+    Interval<float>		ctabrange_;
+
+    void                        addMarker(float,bool);
+    void                        removeMarker(int);
+    bool                        changeColor(int);
+
+    void			drawMarkersCB(CallBacker*);
+    void			eraseMarkersCB(CallBacker*);
+    void			mouseClkCB(CallBacker*);
+    void			mouseDoubleClickCB(CallBacker*);
+    void			mouseReleaseCB(CallBacker*);
+    void			mouseMoveCB(CallBacker*);
+};

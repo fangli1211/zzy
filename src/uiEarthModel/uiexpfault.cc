@@ -1,0 +1,473 @@
+/*+
+________________________________________________________________________
+
+ Copyright:	(C) 1995-2022 dGB Beheer B.V.
+ License:	https://dgbes.com/licensing
+________________________________________________________________________
+
+-*/
+
+#include "uiexpfault.h"
+
+#include "bufstring.h"
+#include "ctxtioobj.h"
+#include "emfault3d.h"
+#include "emfaultset3d.h"
+#include "emfaultstickset.h"
+#include "emioobjinfo.h"
+#include "lmkemfaulttransl.h"
+#include "emmanager.h"
+#include "executor.h"
+#include "file.h"
+#include "filepath.h"
+#include "ioman.h"
+#include "ioobj.h"
+#include "od_helpids.h"
+#include "od_ostream.h"
+#include "ptrman.h"
+#include "strmprov.h"
+#include "survinfo.h"
+#include "unitofmeasure.h"
+#include "zaxistransform.h"
+
+#include "uibutton.h"
+#include "uichecklist.h"
+#include "uicoordsystem.h"
+#include "uifileinput.h"
+#include "uiiosurface.h"
+#include "uimsg.h"
+#include "uimultisurfaceread.h"
+#include "uistrings.h"
+#include "uitaskrunner.h"
+#include "uit2dconvsel.h"
+#include "uiunitsel.h"
+
+
+static EM::ObjectType getFaultObjectType( const char* typ )
+{
+    const StringView typstr( typ );
+    if ( typstr == EMFaultStickSetTranslatorGroup::sGroupName() )
+	return EM::ObjectType::FltSS3D;
+    if ( typstr == EMFaultSet3DTranslatorGroup::sGroupName() )
+	return EM::ObjectType::FltSet;
+    return EM::ObjectType::Flt3D;
+}
+
+#define mGetObjNr \
+    isbulk ? mPlural : 1 \
+
+#define mGet( tp, fss, f3d, fset ) \
+    StringView(tp) == EMFaultStickSetTranslatorGroup::sGroupName() ? fss : \
+    (StringView(tp) == EMFaultSet3DTranslatorGroup::sGroupName() ? fset : f3d)
+
+#define mGetCtxt(tp) \
+    mGet( tp, mIOObjContext(EMFaultStickSet), mIOObjContext(EMFault3D), \
+	mIOObjContext(EMFaultSet3D) )
+
+#define mGetTitle(tp) \
+    mGet( tp, uiStrings::phrExport( uiStrings::sFaultStickSet(mGetObjNr) ), \
+	      uiStrings::phrExport( uiStrings::sFault(mGetObjNr) ), \
+	      uiStrings::phrExport( uiStrings::sFaultSet(mGetObjNr) ) )
+
+#define mGetLbl(tp) \
+    mGet( tp, uiStrings::phrInput( uiStrings::sFaultStickSet(mGetObjNr) ), \
+	      uiStrings::phrInput( uiStrings::sFault(mGetObjNr) ), \
+	      uiStrings::phrInput( uiStrings::sFaultSet(mGetObjNr) ) )
+
+
+uiExportFault::uiExportFault( uiParent* p, const char* typ, bool isbulk )
+    : uiDialog(p,Setup(mGetTitle(typ),
+		       mGet(typ,mODHelpKey(mExportFaultStickHelpID),
+				mODHelpKey(mExportFaultHelpID),
+				mODHelpKey(mExportFaultSetHelpID))))
+    , isbulk_(isbulk)
+    , typ_(typ)
+{
+    setModal( false );
+    setDeleteOnClose( false );
+    setOkCancelText( uiStrings::sExport(), uiStrings::sClose() );
+
+    zdomtypefld_ = new uiGenInput( this, tr("Z Domain"),
+				  BoolInpSpec(SI().zIsTime(),uiStrings::sTime(),
+					      uiStrings::sDepth()) );
+    mAttachCB( zdomtypefld_->valueChanged, uiExportFault::zDomainTypeChgCB );
+
+    coordfld_ = new uiGenInput( this, tr("Write coordinates as"),
+				BoolInpSpec(true,tr("X/Y"),tr("Inl/Crl")) );
+    mAttachCB( coordfld_->valueChanged, uiExportFault::exportCoordSysChgCB );
+
+    const ZDomain::Info* depthinfo = nullptr;
+    if ( SI().zIsTime() )
+	depthinfo = SI().depthsInFeet() ? &ZDomain::DepthFeet()
+					: &ZDomain::DepthMeter();
+    else
+	depthinfo = &SI().zDomainInfo();
+
+    if ( isbulk_ )
+    {
+	multisurfdepthread_ = new uiMultiSurfaceRead( this, typ, depthinfo );
+	multisurftimeread_ =
+			new uiMultiSurfaceRead( this, typ, &ZDomain::TWT() );
+	multisurfdepthread_->attach( alignedBelow, zdomtypefld_ );
+	multisurftimeread_->attach( alignedBelow, zdomtypefld_ );
+	coordfld_->attach( alignedBelow, multisurftimeread_ );
+	coordfld_->attach( alignedBelow, multisurfdepthread_ );
+    }
+    else
+    {
+	const EM::ObjectType flttype = getFaultObjectType( typ );
+	timefld_ = new uiFaultSel( this, flttype, &ZDomain::TWT(), true );
+	depthfld_ = new uiFaultSel( this, flttype, depthinfo, true );
+	mAttachCB( timefld_->selectionDone, uiExportFault::inpSelChgCB );
+	mAttachCB( depthfld_->selectionDone, uiExportFault::inpSelChgCB );
+	timefld_->attach( alignedBelow, zdomtypefld_ );
+	depthfld_->attach( alignedBelow, zdomtypefld_ );
+	coordfld_->attach( alignedBelow, depthfld_ );
+    }
+
+    uiObject* attachobj = coordfld_->attachObj();
+    if ( SI().hasProjection() )
+    {
+	coordsysselfld_ = new Coords::uiCoordSystemSel( this );
+	coordsysselfld_->attach( alignedBelow, attachobj );
+	attachobj = coordsysselfld_->attachObj();
+    }
+
+    zunitsel_ = new uiUnitSel( this, uiUnitSel::Setup(tr("Z Unit")) );
+    zunitsel_->setUnit( UnitOfMeasure::surveyDefZUnit() );
+    zunitsel_->attach( alignedBelow, attachobj );
+
+    stickidsfld_ = new uiCheckList( this, uiCheckList::ChainAll,
+				    OD::Horizontal );
+    stickidsfld_->setLabel( uiStrings::sWrite() );
+    stickidsfld_->addItem( tr("Stick index") ).addItem( tr("Node index" ) );
+    stickidsfld_->setChecked( 0, true );
+    stickidsfld_->setChecked( 1, true );
+    stickidsfld_->attach( alignedBelow, zunitsel_ );
+
+    if ( mGet(typ,true,false,false) )
+    {
+	linenmfld_ = new uiCheckBox( this,
+				     tr("Write line name if picked on 2D") );
+	linenmfld_->setChecked( true );
+	linenmfld_->attach( alignedBelow, stickidsfld_ );
+    }
+
+    outfld_ = new uiASCIIFileInput( this, false );
+    if ( linenmfld_ )
+	outfld_->attach( alignedBelow, linenmfld_ );
+    else
+	outfld_->attach( alignedBelow, stickidsfld_ );
+
+    exportCoordSysChgCB(nullptr);
+
+    dispstr_ = EMFaultStickSetTranslatorGroup::sGroupName() == typ
+	? uiStrings::sFaultStickSet(mGetObjNr)
+	: (EMFaultSet3DTranslatorGroup::sGroupName() == typ
+	    ? uiStrings::sFaultSet(mGetObjNr) : uiStrings::sFault(mGetObjNr) );
+
+    mAttachCB( postFinalize(), uiExportFault::initGrpCB );
+}
+
+
+uiExportFault::~uiExportFault()
+{
+    detachAllNotifiers();
+}
+
+
+void uiExportFault::initGrpCB( CallBacker* )
+{
+    zDomainTypeChgCB( nullptr );
+    if ( !isbulk_ )
+	inpSelChgCB( nullptr );
+}
+
+
+void uiExportFault::zDomainTypeChgCB(CallBacker*)
+{
+    const bool istime = zdomtypefld_->getBoolValue();
+    if ( isbulk_ )
+    {
+	multisurfdepthread_->display( !istime );
+	multisurftimeread_->display( istime );
+    }
+    else
+    {
+	timefld_->display( istime );
+	depthfld_->display( !istime );
+    }
+
+    const ZDomain::Info& zinfo( istime ? ZDomain::Time() : ZDomain::Depth() );
+    zunitsel_->setUnit( UnitOfMeasure::zUnit(zinfo,false) );
+}
+
+
+void uiExportFault::inpSelChgCB( CallBacker* )
+{
+    if ( isbulk_ || !timefld_ )
+	return;
+
+    const bool istime = zdomtypefld_->getBoolValue();
+    uiFaultSel* selfld = istime ? timefld_ : depthfld_;
+    const IOObj* ioobj = selfld->ioobj( true );
+    if ( !ioobj )
+	return;
+
+    const EM::IOObjInfo info( ioobj->key() );
+    zunitsel_->setUnit( UnitOfMeasure::zUnit(info.zDomain(),false) );
+
+    const FilePath prevfnm( outfld_->fileName() );
+    FilePath fp( ioobj->mainFileName() );
+    fp.setExtension( prevfnm.isEmpty() ? outfld_->defaultExtension()
+				       : prevfnm.extension() );
+    outfld_->setFileName( fp.fileName() );
+}
+
+
+bool uiExportFault::getInputMIDs( TypeSet<MultiID>& midset )
+{
+    if ( isbulk_ )
+    {
+	const bool istime = zdomtypefld_->getBoolValue();
+	if ( istime )
+	    multisurftimeread_->getSurfaceIds( midset );
+	else
+	    multisurfdepthread_->getSurfaceIds( midset );
+    }
+    else
+    {
+	const bool istime = zdomtypefld_->getBoolValue();
+	uiFaultSel* selfld = istime ? timefld_ : depthfld_;
+	const IOObj* ioobj = selfld->ioobj( false );
+	if ( !ioobj )
+	    return false;
+
+	midset.add( ioobj->key() );
+    }
+
+    return true;
+}
+
+static int stickNr( EM::EMObject* emobj, int stickidx )
+{
+    mDynamicCastGet(Geometry::FaultStickSet*,fss,emobj->geometryElement())
+    return fss->rowRange().atIndex( stickidx );
+}
+
+
+static int nrSticks( EM::EMObject* emobj )
+{
+    mDynamicCastGet(Geometry::FaultStickSet*,fss,emobj->geometryElement())
+    return fss->nrSticks();
+}
+
+
+
+static int nrKnots( EM::EMObject* emobj, int stickidx )
+{
+    mDynamicCastGet(Geometry::FaultStickSet*,fss,emobj->geometryElement())
+	const int sticknr = fss->rowRange().atIndex( stickidx );
+    return fss->nrKnots( sticknr );
+}
+
+
+static Coord3 getCoord( EM::EMObject* emobj, int stickidx, int knotidx )
+{
+    mDynamicCastGet(Geometry::FaultStickSet*,fss,emobj->geometryElement())
+	const int sticknr = fss->rowRange().atIndex(stickidx);
+    const int knotnr = fss->colRange(sticknr).atIndex(knotidx);
+    return fss->getKnot( RowCol(sticknr,knotnr) );
+}
+
+
+#define mErrRet(s) { uiMSG().error(s); return false; }
+
+bool uiExportFault::writeAscii()
+{
+    TypeSet<MultiID> midset;
+    if ( !getInputMIDs(midset) )
+	mErrRet(tr("Cannot find object in database"))
+
+    const BufferString fname = outfld_->fileName();
+    od_ostream ostrm( fname );
+    if ( !ostrm.isOK() )
+	return false;
+
+    uiTaskRunner taskrunner( this );
+    PtrMan<Task> objloader = EM::EMM().objectLoader( midset );
+
+    if ( objloader && !TaskRunner::execute(&taskrunner, *objloader) )
+	return false;
+
+    const UnitOfMeasure* zunitout = zunitsel_->getUnit();
+    const bool doxy = coordfld_->getBoolValue();
+    const bool inclstickidx = stickidsfld_->isChecked( 0 );
+    const bool inclknotidx = stickidsfld_->isChecked( 1 );
+    ConstRefMan<Coords::CoordSystem> outcrs =
+	coordsysselfld_ ? coordsysselfld_->getCoordSystem() : nullptr;
+    ConstRefMan<Coords::CoordSystem> syscrs = SI().getCoordSystem();
+    for ( int idx=0; idx<midset.size(); idx++ )
+    {
+	EM::ObjectID objid = EM::EMM().getObjectID( midset[idx] );
+	if ( !objid.isValid() )
+	    continue;
+
+	RefMan<EM::EMObject> emobj = EM::EMM().getObject(objid);
+	mDynamicCastGet(EM::Fault3D*,f3d,emobj.ptr())
+	mDynamicCastGet(EM::FaultStickSet*,fss,emobj.ptr())
+	mDynamicCastGet(EM::FaultSet3D*,fset,emobj.ptr())
+	if ( !f3d && !fss && !fset )
+	    return false;
+
+	const int nrobjs = fset ? fset->nrFaults() : 1;
+	for ( int oidx=0; oidx<nrobjs; oidx++ )
+	{
+	    RefMan<EM::EMObject> fltobj = emobj;
+	    BufferString objnm = fltobj->name();
+	    const UnitOfMeasure* objzunit = fltobj->zUnit();
+
+	    if ( fset )
+	    {
+		const EM::FaultID fltid = fset->getFaultID( oidx );
+		fltobj = fset->getFault3D( fltid );
+		objnm = fset->name();
+		objnm.add("_").add( fltid.asInt() );
+	    }
+
+	    BufferString str;
+	    const int nrsticks = nrSticks( fltobj.ptr() );
+	    mDynamicCastGet(Geometry::FaultStickSet*,fssgeom,
+						    fltobj->geometryElement())
+	    for ( int stickidx=0; stickidx<nrsticks; stickidx++ )
+	    {
+		const int nrknots = nrKnots( fltobj.ptr(), stickidx );
+		const Geometry::FaultStick* fs = fssgeom->getStick( stickidx );
+		for ( int knotidx=0; knotidx<nrknots; knotidx++ )
+		{
+		    Coord3 crd = getCoord( fltobj.ptr(), stickidx, knotidx );
+		    if ( !crd.isDefined() )
+			continue;
+
+		    if ( isbulk_ || nrobjs > 1 )
+			ostrm << "\""<< objnm <<"\"" << "\t";
+
+		    const TrcKey& tk = fs->locs_[knotidx].trcKey();
+		    if ( !doxy )
+		    {
+			const BinID& bid = tk.position();
+			ostrm << bid.inl() << '\t' << bid.crl();
+		    }
+		    else
+		    {
+			// ostreams print doubles awfully
+			str.setEmpty();
+			if ( outcrs && !(*outcrs == *syscrs) )
+			{
+			    const Coord crd2d =
+				outcrs->convertFrom( crd.coord(), *syscrs );
+                            crd.setXY( crd2d.x_, crd2d.y_);
+			}
+
+                        str += crd.x_; str += "\t"; str += crd.y_;
+			ostrm << str;
+		    }
+
+                    if ( !mIsUdf(crd.z_) )
+                        convValue( crd.z_, objzunit, zunitout );
+
+                    ostrm << '\t' << crd.z_;
+
+		    if ( inclstickidx )
+			ostrm << '\t' << stickidx;
+		    if ( inclknotidx )
+			ostrm << '\t' << knotidx;
+
+		    if ( fss )
+		    {
+			const int sticknr = stickNr( fltobj.ptr(), stickidx );
+			bool pickedon2d =
+			    fss->geometry().pickedOn2DLine( sticknr );
+			if ( pickedon2d && linenmfld_->isChecked() )
+			{
+			    Pos::GeomID geomid =
+				fss->geometry().pickedGeomID( sticknr );
+			    const char* linenm = Survey::GM().getName( geomid );
+
+			    if ( linenm )
+				ostrm << '\t' << linenm;
+			}
+		    }
+
+		    ostrm << '\n';
+		}
+	    }
+	}
+    }
+
+    ostrm.close();
+    return true;
+}
+
+
+void uiExportFault::exportCoordSysChgCB( CallBacker* )
+{
+    if ( coordsysselfld_ )
+	coordsysselfld_->display( coordfld_->getBoolValue() );
+}
+
+
+bool uiExportFault::acceptOK( CallBacker* )
+{
+    bool isobjsel = true;
+    if ( !isbulk_ )
+    {
+	const bool istime = zdomtypefld_->getBoolValue();
+	uiFaultSel* selfld = istime ? timefld_ : depthfld_;
+	isobjsel = selfld && selfld->ioobj( false );
+    }
+    else
+    {
+	TypeSet<MultiID> midset;
+	getInputMIDs( midset );
+	if ( midset.isEmpty() )
+	    isobjsel = false;
+    }
+
+    if ( !isobjsel )
+	mErrRet( uiStrings::phrSelect(tr("the input fault")) )
+
+    const BufferString outfnm( outfld_->fileName() );
+    if ( outfnm.isEmpty() )
+	mErrRet( uiStrings::sSelOutpFile() )
+
+    if ( File::exists(outfnm) &&
+	 !uiMSG().askOverwrite(uiStrings::sOutputFileExistsOverwrite()) )
+	return false;
+
+    if ( !writeAscii() )
+    {
+	uiMSG().error(uiStrings::phrCannotCreateDBEntryFor(
+						    tr("selected faults")));
+	return false;
+    }
+
+    uiString msg = tr("%1 successfully exported.").arg( dispstr_ );
+    msg.addNewLine();
+    if ( typ_ == EMFaultSet3DTranslatorGroup::sGroupName() )
+    {
+	msg.append( tr("Do you want to continue exporting FaultSet"), true );
+    }
+    else
+    {
+	msg.append( tr("Do you want to export more %2?").arg(
+	    typ_ == EMFaultStickSetTranslatorGroup::sGroupName() ?
+	    uiStrings::sFaultStickSet(mPlural) : uiStrings::sFault(mPlural)),
+	    true );
+    }
+
+    const bool ret = uiMSG().askGoOn( msg, uiStrings::sYes(),
+				      uiStrings::sNoCloseWindow() );
+
+    return !ret;
+}

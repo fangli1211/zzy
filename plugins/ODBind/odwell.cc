@@ -1,0 +1,643 @@
+/*+
+________________________________________________________________________________
+
+ Copyright:  (C) 2022 dGB Beheer B.V.
+
+    This program is free software: you can redistribute it and/or modify
+    it under the terms of the GNU General Public License as published by
+    the Free Software Foundation, either version 3 of the License, or
+    (at your option) any later version.
+
+    This program is distributed in the hope that it will be useful,
+    but WITHOUT ANY WARRANTY; without even the implied warranty of
+    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+    GNU General Public License for more details.
+
+    You should have received a copy of the GNU General Public License
+    along with this program. If not, see <https://www.gnu.org/licenses/>.
+________________________________________________________________________________
+
+-*/
+
+
+#include "odsurvey.h"
+#include "odwell.h"
+
+#include "ioobj.h"
+#include "latlong.h"
+#include "position.h"
+#include "welllog.h"
+#include "welllogset.h"
+#include "wellmarker.h"
+#include "welltrack.h"
+
+#include <cmath>
+
+
+odWell::odWell( const odSurvey& thesurvey, const char* name )
+    : odSurveyObject(thesurvey, name, translatorGrp())
+{
+    ConstPtrMan<IOObj> ioobj( ioobj_ptr() );
+    if ( !ioobj )
+	return;
+
+    wd_ = Well::MGR().get( ioobj->key(), Well::LoadReqs::AllNoLogs() );
+    if ( !wd_ )
+	errmsg_ = BufferString( "cannot load well data for: ", name );
+}
+
+
+const Well::Data* odWell::wd() const
+{
+    survey_.activate();
+    return wd_.ptr();
+}
+
+
+BufferStringSet* odWell::getLogNames() const
+{
+    errmsg_.setEmpty();
+    survey_.activate();
+    if ( !wd_ )
+	return nullptr;
+
+    auto* names = new BufferStringSet;
+    wd_->logs().getNames( *names );
+    return names;
+}
+
+
+void odWell::getLogInfo( OD::JSON::Array& jsarr,
+			 const BufferStringSet& fornames ) const
+{
+    errmsg_.setEmpty();
+    survey_.activate();
+    jsarr.setEmpty();
+    PtrMan<BufferStringSet> allnms = getLogNames();
+    if ( !allnms )
+    {
+	errmsg_ = "odWell::getLogInfo - invalid welldata object.";
+	return;
+    }
+
+    BufferStringSet nms;
+    if ( fornames.isEmpty() )
+	nms = *allnms;
+    else
+	nms = odSurvey::getCommonItems( *allnms, fornames );
+
+    if ( !wd_ )
+	return;
+
+    const Well::LogSet& logs = wd_->logs();
+    const UnitOfMeasure* zduom = UnitOfMeasure::surveyDefDepthUnit();
+    const UnitOfMeasure* zsuom = UnitOfMeasure::surveyDefDepthStorageUnit();
+    for ( const auto* nm : nms )
+    {
+	const char* lognm = nm->buf();
+	if ( !logs.isPresent(lognm) )
+	    continue;
+
+	const Interval<float> dahstored = logs.getDahRangeForLog( lognm );
+	const Interval<float> dahrange(
+			getConvertedValue(dahstored.start_, zsuom, zduom),
+			getConvertedValue(dahstored.stop_, zsuom, zduom) );
+	OD::JSON::Object loginfo;
+	loginfo.set( "name", lognm );
+	loginfo.set( "mnemonic", logs.getMnemonicLblOfLog(lognm) );
+	loginfo.set( "uom", logs.getUnitOfMeasureLblOfLog(lognm) );
+	loginfo.set( "dah_range", dahrange );
+	loginfo.set( "log_range", logs.getValueRangeForLog(lognm) );
+	jsarr.add( loginfo.clone() );
+    }
+}
+
+
+BufferStringSet* odWell::getMarkerNames() const
+{
+    errmsg_.setEmpty();
+    survey_.activate();
+    if ( !wd_ )
+	return nullptr;
+
+    auto* names = new BufferStringSet;
+    const Well::MarkerSet& ms = wd_->markers();
+    ms.getNames( *names );
+    return names;
+}
+
+
+void odWell::getMarkerInfo( OD::JSON::Array& jsarr,
+			    const BufferStringSet& fornames ) const
+{
+    errmsg_.setEmpty();
+    survey_.activate();
+    jsarr.setEmpty();
+    PtrMan<BufferStringSet> allnms = getMarkerNames();
+    if ( !allnms )
+    {
+	errmsg_ = "odWell::getMarkerInfo - invalid welldata object.";
+	return;
+    }
+
+    BufferStringSet nms;
+    if ( fornames.isEmpty() )
+	nms = *allnms;
+    else
+	nms = odSurvey::getCommonItems( *allnms, fornames );
+
+    if ( !wd_ )
+	return;
+
+    const Well::MarkerSet& ms = wd_->markers();
+    const UnitOfMeasure* zduom = UnitOfMeasure::surveyDefDepthUnit();
+    const UnitOfMeasure* zsuom = UnitOfMeasure::surveyDefDepthStorageUnit();
+
+    for ( const auto* nm : nms )
+    {
+	const auto* marker = ms.getByName( nm->buf() );
+	if ( !marker )
+	    continue;
+
+	OD::JSON::Object markerinfo;
+	markerinfo.set( "name", marker->name() );
+	markerinfo.set( "color", marker->color().getStdStr() );
+	markerinfo.set( "dah", getConvertedValue(marker->dah(), zsuom, zduom) );
+	jsarr.add( markerinfo.clone() );
+    }
+}
+
+
+void odWell::getTrack( hAllocator allocator )
+{
+    errmsg_.setEmpty();
+    survey_.activate();
+    if ( !wd_ )
+    {
+	errmsg_ = "odWell::getTrack - invalid welldata object.";
+	return;
+    }
+
+    const Well::Track& wt = wd_->track();
+    const int ndim = 1;
+    int dims[ndim];
+    dims[0] = wt.size();
+    float* dah_data = static_cast<float*>( allocator(ndim, dims, 'f') );
+    float* tvdss_data = static_cast<float*>( allocator(ndim, dims, 'f') );
+    double* x_data = static_cast<double*>( allocator(ndim, dims, 'd') );
+    double* y_data = static_cast<double*>( allocator(ndim, dims, 'd') );
+    const UnitOfMeasure* zduom = UnitOfMeasure::surveyDefDepthUnit();
+    const UnitOfMeasure* zsuom = UnitOfMeasure::surveyDefDepthStorageUnit();
+
+    for ( int idx=0; idx<dims[0]; idx++ )
+    {
+	const Coord3 pos = wt.pos( idx );
+	*dah_data++ = getConvertedValue( wt.dah(idx), zsuom, zduom );
+        *tvdss_data++ = getConvertedValue( pos.z_, zsuom, zduom );
+        *x_data++ = pos.x_;
+        *y_data++ = pos.y_;
+    }
+}
+
+
+void odWell::getLogs( hAllocator allocator, const BufferStringSet& lognms,
+		      OD::JSON::Object& jsuomobj, float zstep,
+		      SampleMode samplemode )
+{
+    errmsg_.setEmpty();
+    survey_.activate();
+    jsuomobj.setEmpty();
+    if ( !wd_ )
+    {
+	errmsg_ = "odWell::getLogs - invalid welldata object.";
+	return;
+    }
+
+    BufferStringSet nms;
+    PtrMan<BufferStringSet> allnms = getLogNames();
+    if ( lognms.isEmpty() )
+	nms = *allnms;
+    else
+	nms = odSurvey::getCommonItems( *allnms, lognms );
+
+    const Well::LoadReqs lreqs( nms );
+    ConstRefMan<Well::Data> wd = Well::MGR().get( wd_->multiID(), lreqs );
+    if ( !wd )
+    {
+	errmsg_ = "odWell::getLogs - cannot load requested logs";
+	return;
+    }
+
+    const UnitOfMeasure* zduom = UnitOfMeasure::surveyDefDepthUnit();
+    const UnitOfMeasure* zsuom = UnitOfMeasure::surveyDefDepthStorageUnit();
+    StepInterval<float> dahrg;
+    dahrg.setUdf();
+    dahrg.step_ = getConvertedValue( zstep, zduom, zsuom );
+    const Well::LogSet& logs = wd->logs();
+    for ( const auto* lognm : nms )
+    {
+	if ( logs.isPresent(lognm->buf()) )
+	    dahrg.include( logs.getDahRangeForLog(lognm->buf()) );
+    }
+
+    const int ndim = 1;
+    int dims[ndim];
+    bool first = true;
+    for ( const auto* lognm : nms )
+    {
+	const auto* log = logs.getLog( lognm->buf() );
+	if ( !log || !log->isLoaded() )
+	    continue;
+
+	PtrMan<Well::Log> outlog;
+	if ( samplemode==Upscale )
+	    outlog = log->upScaleLog( dahrg );
+	else
+	    outlog = log->sampleLog( dahrg );
+
+	dims[0] = outlog->size();
+	if ( first )
+	{
+	    float* dah_data = static_cast<float*>(
+					    allocator(ndim, dims, 'f') );
+	    for ( int idx=0; idx<outlog->size(); idx++ )
+		*dah_data++ = getConvertedValue( outlog->dah(idx),
+						 zsuom, zduom );
+
+	    first = false;
+	    jsuomobj.set( "dah",
+			 UnitOfMeasure::surveyDefDepthUnit()->getLabel() );
+	}
+
+	float* log_data = static_cast<float*>(
+					    allocator(ndim, dims, 'f') );
+	for ( int idx=0; idx<outlog->size();idx++ )
+	    *log_data++ = mIsUdf(outlog->value(idx)) ? nanf("") :
+						outlog->value(idx);
+
+	jsuomobj.set( lognm->buf(), log->unitMeasLabel() );
+    }
+}
+
+
+void odWell::getLog( hAllocator allocator, const char* lognm,
+		     OD::JSON::Object& jsuomobj )
+{
+    survey_.activate();
+    jsuomobj.setEmpty();
+    errmsg_.setEmpty();
+    if ( !wd_ )
+    {
+	errmsg_ = "odWell::getLog - invalid welldata object.";
+	return;
+    }
+
+    const BufferString nm( lognm );
+    if ( !wd_->logs().isPresent(nm) )
+    {
+	errmsg_ = "odWell::getLog - no log named: ";
+	errmsg_.add( nm );
+	return;
+    }
+
+    const Well::LoadReqs lreqs( nm );
+    ConstRefMan<Well::Data> wd = Well::MGR().get( wd_->multiID(), lreqs );
+    const Well::Log* log = wd ? wd->logs().getLog( nm ) : nullptr;
+    if ( !log || !log->isLoaded() )
+    {
+	errmsg_ = "odWell::getLog - cannot load requested log";
+	return;
+    }
+
+    const UnitOfMeasure* zduom = UnitOfMeasure::surveyDefDepthUnit();
+    const UnitOfMeasure* zsuom = UnitOfMeasure::surveyDefDepthStorageUnit();
+    const int ndim = 1;
+    int dims[ndim];
+    dims[0] = log->size();
+    float* dah_data = static_cast<float*>( allocator(ndim, dims, 'f') );
+    for ( int idx=0; idx<log->size(); idx++ )
+	*dah_data++ = getConvertedValue( log->dah(idx), zsuom, zduom );
+
+    jsuomobj.set( "dah", zduom->getLabel() );
+    float* log_data = static_cast<float*>( allocator(ndim, dims, 'f') );
+    for ( int idx=0; idx<log->size(); idx++ )
+	*log_data++ = mIsUdf(log->value(idx)) ? nanf("") : log->value(idx);
+
+    jsuomobj.set( nm.buf(), log->unitMeasLabel() );
+}
+
+void odWell::putLog( const char* lognm, const float* dah, const float* logdata,
+		     uint32_t sz, const char* uom, const char* mnem,
+		     bool overwrite )
+{
+    errmsg_.setEmpty();
+    survey_.activate();
+    if ( !wd_ )
+    {
+	errmsg_ = "odWell::putLog - invalid welldata object.";
+	return;
+    }
+
+    if ( !overwrite && wd_->logs().isPresent(lognm) )
+	return;
+
+    if ( wd_->logs().isPresent(lognm) )
+	Well::MGR().deleteLogs( wd_->multiID(), BufferStringSet(lognm) );
+
+    const UnitOfMeasure* zduom = UnitOfMeasure::surveyDefDepthUnit();
+    const UnitOfMeasure* zsuom = UnitOfMeasure::surveyDefDepthStorageUnit();
+    PtrMan<Well::Log> outlog = new Well::Log( lognm );
+    if ( uom )
+    {
+	const UnitOfMeasure* loguom = UnitOfMeasure::getGuessed( uom );
+	outlog->setUnitOfMeasure( loguom );
+	if ( mnem )
+	{
+	    const BufferStringSet hintnms( lognm, mnem );
+	    const Mnemonic* mn = MnemonicSelection::getGuessed( lognm, loguom,
+								&hintnms );
+	    if ( mn && !mn->isUdf() )
+		outlog->setMnemonic( *mn );
+	}
+    }
+
+    for ( uint32_t idz=0; idz<sz; idz++ )
+    {
+	const float dep = getConvertedValue( *dah++, zduom, zsuom );
+	float logval = *logdata++;
+	if ( std::isnan(logval) )
+	    logval = mUdf(float);
+
+	outlog->addValue( dep, logval );
+    }
+    outlog->updateAfterValueChanges();
+
+    if ( !Well::MGR().writeAndRegister(wd_->multiID(), outlog) )
+	errmsg_ = "odWell::putLog - saving log failed";
+}
+
+
+void odWell::getInfo( OD::JSON::Object& jsobj ) const
+{
+    errmsg_.setEmpty();
+    survey_.activate();
+    jsobj.setEmpty();
+    if ( !wd_ )
+	return;
+
+    jsobj.set( "name", wd_->name().buf());
+    jsobj.set( "uwid", wd_->info().uwid_.buf() );
+    jsobj.set( "operator", wd_->info().oper_.buf() );
+    jsobj.set( "field", wd_->info().field_.buf() );
+    jsobj.set( "county", wd_->info().county_.buf() );
+    jsobj.set( "state", wd_->info().state_.buf() );
+    jsobj.set( "province", wd_->info().province_.buf() );
+    jsobj.set( "country", wd_->info().country_.buf() );
+    jsobj.set( "welltype", OD::toString(wd_->info().welltype_) );
+    const Coord cd = wd_->info().surfacecoord_;
+    jsobj.set( "x", cd.x_ );
+    jsobj.set( "y", cd.y_ );
+    jsobj.set( "kb", wd_->track().getKbElev() );
+    jsobj.set( "td", wd_->track().td() );
+    jsobj.set( "replacement_velocity", wd_->info().replvel_ );
+    jsobj.set( "ground_elevation", wd_->info().groundelev_ );
+}
+
+
+void odWell::getFeature( OD::JSON::Object& jsobj, bool towgs ) const
+{
+    errmsg_.setEmpty();
+    jsobj.set( "type", "Feature" );
+    auto* info = new OD::JSON::Object;
+    getInfo( *info );
+    jsobj.set( "properties", info );
+    auto* geom = new OD::JSON::Object;
+    geom->set( "type", "Point" );
+    OD::JSON::Array* coords;
+    if ( towgs )
+	coords = new OD::JSON::Array( OD::JSON::DataType::String );
+    else
+	coords = new OD::JSON::Array(OD::JSON::DataType::Number);
+
+    getPoints( *coords, towgs );
+    geom->set( "coordinates", coords );
+    jsobj.set( "geometry", geom );
+}
+
+
+void odWell::getPoints( OD::JSON::Array& jsarr, bool towgs ) const
+{
+    errmsg_.setEmpty();
+    survey_.activate();
+    if ( !wd_ )
+	return;
+
+    auto coord = wd_->info().surfacecoord_;
+    if ( towgs )
+    {
+	ConstRefMan<Coords::CoordSystem> coordsys =
+						survey_.si().getCoordSystem();
+	const LatLong ll( LatLong::transform(coord, true, coordsys.ptr()) );
+	jsarr.add( strdup(toString(ll.lng_, 0, 'f', 6)) );
+	jsarr.add( strdup(toString(ll.lat_, 0, 'f', 6)) );
+    }
+    else
+    {
+        jsarr.add( coord.x_ );
+        jsarr.add( coord.y_ );
+    }
+}
+
+
+BufferStringSet* odWell::getCommonMarkerNames( const odSurvey& survey,
+					       const BufferStringSet& fornames )
+{
+    BufferStringSet nms;
+    PtrMan<BufferStringSet> allnms = getNames<odWell>( survey );
+    if ( fornames.isEmpty() )
+	nms = *allnms;
+    else
+	nms = odSurvey::getCommonItems( *allnms, fornames );
+
+    BufferStringSet common;
+    for ( const auto* nm : nms )
+    {
+	odWell well( survey, *nm );
+	PtrMan<BufferStringSet> marknms = well.getMarkerNames();
+	if ( common.isEmpty() )
+	    common = *marknms;
+	else
+	    common = odSurvey::getCommonItems( *marknms, common );
+    }
+    return common.clone();
+}
+
+
+BufferStringSet* odWell::getCommonLogNames( const odSurvey& survey,
+					       const BufferStringSet& fornames )
+{
+    BufferStringSet nms;
+    PtrMan<BufferStringSet> allnms = getNames<odWell>( survey );
+    if ( fornames.isEmpty() )
+	nms = *allnms;
+    else
+	nms = odSurvey::getCommonItems( *allnms, fornames );
+
+    BufferStringSet common;
+    for ( const auto* nm : nms )
+    {
+	odWell well( survey, *nm );
+	PtrMan<BufferStringSet> lognms = well.getLogNames();
+	if ( common.isEmpty() )
+	    common = *lognms;
+	else
+	    common = odSurvey::getCommonItems( *lognms, common );
+    }
+    return common.clone();
+}
+
+
+mDefineBaseBindings(Well, well)
+mDefineRemoveBindings(Well, well)
+
+hStringSet well_lognames( hWell self )
+{
+    auto* p = static_cast<odWell*>(self);
+    if ( !p ) return nullptr;
+    return p->getLogNames();
+}
+
+
+const char* well_loginfo( hWell self, const hStringSet fornms )
+{
+    auto* p = static_cast<odWell*>(self);
+    const auto* nms = static_cast<BufferStringSet*>(fornms);
+    if ( !p || !nms ) return nullptr;
+    OD::JSON::Array jsarr( true );
+    p->getLogInfo( jsarr, *nms );
+    return strdup( jsarr.dumpJSon().buf() );
+}
+
+
+hStringSet well_markernames( hWell self )
+{
+    auto* p = static_cast<odWell*>(self);
+    if ( !p ) return nullptr;
+    return p->getMarkerNames();
+}
+
+
+const char* well_markerinfo( hWell self, const hStringSet fornms )
+{
+    auto* p = static_cast<odWell*>(self);
+    const auto* nms = static_cast<BufferStringSet*>(fornms);
+    if ( !p || !nms ) return nullptr;
+    OD::JSON::Array jsarr( true );
+    p->getMarkerInfo( jsarr, *nms );
+    return strdup( jsarr.dumpJSon().buf() );
+}
+
+
+void well_gettrack( hWell self, hAllocator allocator )
+{
+    auto* p = static_cast<odWell*>(self);
+    if ( p )
+	p->getTrack( allocator );
+}
+
+
+const char* well_getlogs( hWell self, hAllocator allocator,
+			  const hStringSet lognms,
+			  float zstep, bool upscale )
+{
+    auto* p = static_cast<odWell*>(self);
+    const auto* nms = static_cast<BufferStringSet*>(lognms);
+    if ( !p || !nms )
+	return nullptr;
+
+    OD::JSON::Object jsuomobj;
+    p->getLogs( allocator, *nms, jsuomobj, zstep,
+				upscale ? odWell::Upscale : odWell::Sample );
+    return strdup( jsuomobj.dumpJSon().buf() );
+}
+
+
+const char* well_getlog( hWell self, hAllocator allocator, const char* lognm )
+{
+    auto* p = static_cast<odWell*>(self);
+    if ( !p || !lognm )
+	return nullptr;
+
+    OD::JSON::Object jsuomobj;
+    p->getLog( allocator, lognm, jsuomobj );
+    return strdup( jsuomobj.dumpJSon().buf() );
+}
+
+void well_putlog( hWell self, const char* lognm, const float* dah,
+		  const float* logdata, uint32_t sz,
+		  const char* uom, const char* mnem, bool overwrite )
+{
+    auto* p = static_cast<odWell*>(self);
+    if  ( !p )
+	return;
+
+    p->putLog( lognm, dah, logdata, sz, uom, mnem, overwrite );
+}
+
+
+bool well_deletelogs( hWell self, const hStringSet lognms )
+{
+    auto* p = static_cast<odWell*>(self);
+    const auto* nms = static_cast<BufferStringSet*>(lognms);
+    if ( !p || !nms || !p->wd() ) return false;
+
+    if ( nms->isEmpty() )
+	return true;
+
+    return Well::MGR().deleteLogs( p->wd()->multiID(), *nms );
+}
+
+
+void well_tvdss( hWell self, const float dah, float* tvdss )
+{
+    auto* p = static_cast<odWell*>(self);
+    if ( !p || !p->wd() ) return;
+
+    const UnitOfMeasure* zduom = UnitOfMeasure::surveyDefDepthUnit();
+    const UnitOfMeasure* zsuom = UnitOfMeasure::surveyDefDepthStorageUnit();
+    float dahstored = getConvertedValue( dah, zduom, zsuom );
+    float tvdssstored = p->wd()->track().getPos( dahstored ).z_;
+    *tvdss = getConvertedValue( tvdssstored, zsuom, zduom );
+}
+
+
+void well_tvd( hWell self, const float dah, float* tvd )
+{
+    auto* p = static_cast<odWell*>(self);
+    if ( !p || !p->wd() ) return;
+    const UnitOfMeasure* zduom = UnitOfMeasure::surveyDefDepthUnit();
+    const UnitOfMeasure* zsuom = UnitOfMeasure::surveyDefDepthStorageUnit();
+    float dahstored = getConvertedValue( dah, zduom, zsuom );
+    float tvdstored = p->wd()->track().getPos( dahstored ).z_ +
+						p->wd()->track().getKbElev();
+    *tvd = getConvertedValue( tvdstored, zsuom, zduom );
+}
+
+
+hStringSet well_commonlognames( hSurvey surv, const hStringSet nms )
+{
+    auto* p = static_cast<odSurvey*>(surv);
+    auto* fornms = static_cast<BufferStringSet*>(nms);
+    if ( !p || !fornms ) return nullptr;
+    return odWell::getCommonLogNames( *p, *fornms);
+}
+
+
+hStringSet well_commonmarkernames( hSurvey surv, const hStringSet nms )
+{
+    auto* p = static_cast<odSurvey*>(surv);
+    auto* fornms = static_cast<BufferStringSet*>(nms);
+    if ( !p || !fornms ) return nullptr;
+    return odWell::getCommonMarkerNames( *p, *fornms);
+}
+

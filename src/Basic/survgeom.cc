@@ -1,0 +1,771 @@
+/*+
+________________________________________________________________________
+
+ Copyright:	(C) 1995-2022 dGB Beheer B.V.
+ License:	https://dgbes.com/licensing
+________________________________________________________________________
+
+-*/
+
+#include "survgeom.h"
+#include "survgeom2d.h"
+
+#include "genc.h"
+#include "keystrs.h"
+#include "multiid.h"
+#include "posinfo2dsurv.h"
+#include "survinfo.h"
+#include "task.h"
+#include "threadwork.h"
+
+
+namespace Survey
+{
+
+mImplFactory(GeometryReader,GeometryReader::factory);
+mImplFactory(GeometryWriter,GeometryWriter::factory);
+
+
+// GeometryReader
+
+GeometryReader::GeometryReader()
+{}
+
+
+GeometryReader::~GeometryReader()
+{}
+
+
+bool GeometryReader::read( RefObjectSet<Geometry>&, TaskRunner* ) const
+{
+    return false;
+}
+
+
+bool GeometryReader::read( RefObjectSet<Geometry>&, const ObjectSet<IOObj>&,
+			   TaskRunner*) const
+{
+    return false;
+}
+
+
+bool GeometryReader::updateGeometries( RefObjectSet<Geometry>&,
+				       TaskRunner*) const
+{
+    return false;
+}
+
+
+// GeometryWriter
+
+GeometryWriter::GeometryWriter()
+{}
+
+
+GeometryWriter::~GeometryWriter()
+{}
+
+
+bool GeometryWriter::write( Geometry&, uiString&, const char* crfromstr ) const
+{
+    return false;
+}
+
+
+IOObj* GeometryWriter::createEntry( const char* ) const
+{
+    return nullptr;
+}
+
+
+Pos::GeomID GeometryWriter::createNewGeomID( const char* ) const
+{
+    return Pos::GeomID::udf();
+}
+
+
+bool GeometryWriter::removeEntry( const char* ) const
+{
+    return false;
+}
+
+
+static PtrMan<GeometryManager>* thegeommgr = nullptr;
+
+static void deleteGeometryManager()
+{
+    if ( thegeommgr )
+    {
+	thegeommgr->erase();
+	thegeommgr = nullptr;
+    }
+}
+
+PtrMan<GeometryManager>& geomMgr_()
+{
+    static PtrMan<GeometryManager> geommgr_ = nullptr;
+    if ( !geommgr_ && !IsExiting() )
+    {
+	auto* newgeommgr = new GeometryManager;
+	if ( geommgr_.setIfNull(newgeommgr,true) )
+	    NotifyExitProgram( &deleteGeometryManager );
+    }
+    return geommgr_;
+}
+
+const GeometryManager& GM()
+{
+    if ( !thegeommgr )
+	thegeommgr = &geomMgr_();
+    return *(*thegeommgr).ptr();
+}
+
+
+bool is2DGeom( const Pos::GeomID& geomid )
+{ return geomid.is2D(); }
+
+bool is3DGeom( const Pos::GeomID& geomid )
+{ return geomid.is3D(); }
+
+bool isSynthetic( const Pos::GeomID& geomid )
+{ return geomid.isSynth(); }
+
+Pos::GeomID default3DGeomID()
+{ return Pos::GeomID(OD::Geom3D); }
+
+Pos::GeomID getDefault2DGeomID()
+{ return Survey::GM().default2DGeomID(); }
+
+bool isValidGeomID( const Pos::GeomID& geomid )
+{ return geomid.isValid(); }
+
+
+void sortByLinename( TypeSet<Pos::GeomID>& geomids, BufferStringSet* linenames )
+{
+    BufferStringSet lnms;
+    for ( const auto& geomid : geomids )
+	lnms.add( Survey::GM().getName(geomid) );
+
+    ConstArrPtrMan<int> idxs = lnms.getSortIndexes();
+    if ( linenames )
+    {
+	lnms.useIndexes( idxs.ptr() );
+	*linenames = lnms;
+    }
+
+    geomids.useIndexes( idxs.ptr() );
+}
+
+
+Geometry::Geometry()
+    : sampling_(false)
+{
+}
+
+
+Geometry::~Geometry()
+{
+}
+
+
+const Geometry& Geometry::default3D()
+{
+    return Geometry3D::instance();
+}
+
+
+TrcKey Geometry::getTrace( const Coord& crd, float maxdist ) const
+{
+    float dist;
+    const TrcKey tk = nearestTrace( crd,  &dist );
+    return tk.isUdf() || dist>maxdist ? TrcKey::udf() : tk;
+}
+
+
+bool Geometry::includes( const TrcKey& tk ) const
+{
+    return tk.geomID() == getID()
+	&& includes( tk.lineNr(), tk.trcNr() );
+}
+
+
+Coord Geometry::toCoord( const TrcKey& tk )
+{
+    const Geometry* geom = GM().getGeometry( tk.geomID() );
+    return geom ? geom->toCoord( tk.position() ) : Coord::udf();
+}
+
+
+bool Geometry::exists( const TrcKey& tk )
+{
+    const Geometry* geom = GM().getGeometry( tk.geomID() );
+    return geom && geom->includes( tk.position() );
+}
+
+
+OD::GeomSystem Geometry::getSurvID() const
+{
+    return geomSystem();
+}
+
+
+OD::GeomSystem Geometry::geomSystem() const
+{
+    return getID().geomSystem();
+}
+
+
+const Geometry2D* Geometry::as2D() const
+{
+    return const_cast<Geometry*>( this )->as2D();
+}
+
+
+
+#define mGetConstGeom(varnm,geomid) \
+    ConstRefMan<Geometry> varnm = GM().getGeometry( geomid );
+
+
+GeometryManager::GeometryManager()
+    : geometryRead(this)
+    , lock_(false)
+    , closing(this)
+{}
+
+
+GeometryManager::~GeometryManager()
+{
+    closing.trigger();
+}
+
+
+int GeometryManager::nrGeometries() const
+{
+    return geometries_.size();
+}
+
+
+bool GeometryManager::isUsable( const Pos::GeomID& geomid ) const
+{
+    auto* geom = getGeometry( geomid );
+    if ( !geom )
+	return false;
+
+    return geom->as3D() || (geom->as2D() && !geom->as2D()->isEmpty());
+}
+
+bool GeometryManager::has2D() const
+{
+    for ( auto* geometry : geometries_ )
+    {
+       if ( geometry->is2D() )
+	   return true;
+    }
+
+    return false;
+}
+
+
+void GeometryManager::ensureSIPresent()
+{
+    Threads::Locker locker( lock_ );
+    namemap_.clear();
+    geomidmap_.clear();
+    geometries_.setEmpty();
+    bool has3d = false;
+    for ( int idx=0; idx<geometries_.size(); idx++ )
+    {
+	const bool is2d = geometries_[idx]->is2D();
+	if ( !is2d )
+	{
+	    has3d = true;
+	    break;
+	}
+    }
+
+    if ( !has3d )
+    {
+	ConstRefMan<Geometry3D> survicsys = SI().get3DGeometry( false );
+	if ( survicsys )
+	    addGeometry( *survicsys.getNonConstPtr() );
+    }
+}
+
+
+const Geometry* GeometryManager::getGeometry( const Pos::GeomID& geomid ) const
+{
+    return getNonConst(*this).getGeometry( geomid );
+}
+
+
+Geometry* GeometryManager::getGeometry( const Pos::GeomID& geomid )
+{
+    if ( IsExiting() )
+	return nullptr;
+
+    const int idx = indexOf( geomid );
+    return idx<0 ? nullptr : geometries_[idx];
+}
+
+
+const Geometry3D* GeometryManager::getGeometry3D( OD::GeomSystem /*gs*/ ) const
+{
+    return &Geometry3D::instance();
+}
+
+
+static Geometry2D& dummyGeom2D()
+{
+    PosInfo::Line2DData* l2d = nullptr;
+    static RefMan<Survey::Geometry2D> ret = new Survey::Geometry2D( l2d );
+    return *ret;
+}
+
+
+const Geometry2D& GeometryManager::get2D( const Pos::GeomID& geomid ) const
+{
+    const Geometry* geom = getGeometry( geomid );
+    return geom && geom->as2D() ? *geom->as2D(): dummyGeom2D();
+}
+
+
+Geometry2D& GeometryManager::get2D( const Pos::GeomID& geomid )
+{
+    Geometry* geom = getGeometry( geomid );
+    return geom && geom->as2D() ? *geom->as2D(): dummyGeom2D();
+}
+
+
+const Geometry* GeometryManager::getGeometry( const MultiID& mid ) const
+{
+    if ( mid.nrIDs() == 2 )
+	return getGeometry( Pos::GeomID(mid.objectID()) );
+
+    return nullptr;
+}
+
+
+const Geometry* GeometryManager::getGeometry( const char* nm ) const
+{
+    if ( IsExiting() )
+	return nullptr;
+
+    if ( StringView(nm).isEmpty() )
+	return nullptr;
+
+    auto it = namemap_.find( nm );
+    if ( it != namemap_.end() )
+    {
+	const int geomidx = it->second;
+	return geometries_[geomidx];
+    }
+
+    return nullptr;
+}
+
+
+Pos::GeomID GeometryManager::getGeomID( const char* nm ) const
+{
+    if ( IsExiting() )
+	return Pos::GeomID::udf();
+
+    if ( StringView(nm).isEmpty() )
+	return Pos::GeomID::udf();
+
+    auto it = namemap_.find( nm );
+    if ( it != namemap_.cend() )
+    {
+	const int geomidx = it->second;
+	return geometries_[geomidx]->getID();
+    }
+
+    return Pos::GeomID::udf();
+}
+
+
+Pos::GeomID GeometryManager::getGeomID( const char* lsnm,
+					const char* lnnm ) const
+{
+    if ( !hasduplnms_ )
+	return getGeomID( lnnm );
+
+    BufferString newlnm = lsnm;
+    newlnm.add( "-" );
+    newlnm.add( lnnm );
+    return getGeomID( newlnm.buf() );
+}
+
+
+const char* GeometryManager::getName( const Pos::GeomID& geomid ) const
+{
+    mGetConstGeom(geom,geomid);
+    return geom ? geom->getName() : nullptr;
+}
+
+
+Pos::GeomID Survey::GeometryManager::default2DGeomID() const
+{
+    for ( const auto* geometry : geometries_ )
+    {
+	if ( geometry->is2D() )
+	    return geometry->getID();
+    }
+
+    return Pos::GeomID( OD::Geom2D );
+}
+
+
+StepInterval<float> GeometryManager::zRange( const Pos::GeomID& geomid ) const
+{
+    const Survey::Geometry* geom = getGeometry( geomid );
+    StepInterval<float> zrg = SI().zRange();
+    if ( geom && geom->as2D() )
+	zrg = geom->as2D()->zRange();
+    else if ( geom && geom->as3D() )
+	zrg = geom->as3D()->zRange();
+
+    return zrg;
+}
+
+
+Coord GeometryManager::toCoord( const TrcKey& tk ) const
+{
+    mGetConstGeom(geom,tk.geomID());
+    return geom ? geom->toCoord( tk.lineNr(), tk.trcNr() ) : Coord::udf();
+}
+
+
+TrcKey GeometryManager::traceKey( Pos::GeomID geomid, Pos::LineID lid,
+				  Pos::TraceID tid ) const
+{
+    mGetConstGeom(geom,geomid);
+    if ( !geom )
+	return TrcKey::udf();
+
+    if ( geom->is2D() )
+	return TrcKey( geomid,	tid );
+
+    return TrcKey( BinID(lid, tid) );
+}
+
+
+TrcKey GeometryManager::traceKey( Pos::GeomID geomid, Pos::TraceID tid ) const
+{
+    mGetConstGeom(geom,geomid);
+    if ( !geom || !geom->is2D() )
+	return TrcKey::udf();
+
+    return TrcKey( geomid,  tid );
+}
+
+
+TrcKey GeometryManager::nearestTrace( const Coord& crd, bool is2d,
+				      float* dist ) const
+{
+    BufferStringSet nms;
+    TypeSet<Pos::GeomID> geomids;
+    const bool res = getList( nms, geomids, is2d );
+    if ( !res )
+	return TrcKey::udf();
+
+    return nearestTrace( geomids, crd, dist );
+}
+
+
+TrcKey GeometryManager::nearestTrace( const TypeSet<Pos::GeomID>& geomids,
+				const Coord& crd, float* dist ) const
+{
+    TrcKey tkatmin;
+    float mindist = mUdf(float);
+    for ( int idx=0; idx<geomids.size(); idx++ )
+    {
+	const Geometry* geom = getGeometry( geomids[idx] );
+	if ( !geom )
+	    continue;
+
+	float curdist = mUdf(float);
+	TrcKey tk = geom->nearestTrace( crd, &curdist );
+	if ( curdist < mindist )
+	{
+	    mindist = curdist;
+	    tkatmin = tk;
+	}
+    }
+
+    if ( dist )
+	*dist = mindist;
+
+    return tkatmin;
+}
+
+
+void GeometryManager::addGeometry( Survey::Geometry& geom )
+{
+    geometries_.add( &geom );
+    namemap_[geom.getName()] = geometries_.size()-1;
+    geomidmap_[geom.getID().asInt()] = geometries_.size()-1;
+}
+
+
+bool GeometryManager::fetchFrom2DGeom( uiString& errmsg )
+{
+    ensureSIPresent();
+    fillGeometries( nullptr );
+    if ( nrGeometries() > 1 ) // Already have new 2D geoms
+	return true;
+
+    PtrMan<GeometryWriter> geomwriter = GeometryWriter::factory()
+				       .create(sKey::TwoD());
+    BufferStringSet lsnames;
+    S2DPOS().getLineSets( lsnames );
+    bool fetchedgeometry = false;
+    for ( int lsidx=0; lsidx<lsnames.size(); lsidx++ )
+    {
+	BufferStringSet lnames;
+	S2DPOS().getLines( lnames, lsnames.get(lsidx).buf() );
+	S2DPOS().setCurLineSet( lsnames.get(lsidx).buf() );
+	for ( int lidx=0; lidx<lnames.size(); lidx++ )
+	{
+	    const Pos::GeomID geomid = GM().getGeomID( lsnames.get(lsidx),
+						       lnames.get(lidx) );
+	    if ( geomid.isValid() )
+		continue;
+
+	    fetchedgeometry = true;
+	    PtrMan<PosInfo::Line2DData> data = new PosInfo::Line2DData;
+	    data->setLineName( lnames.get(lidx) );
+	    if ( !S2DPOS().getGeometry(*data) )
+		continue;
+
+	    if ( hasduplnms_ )
+	    {
+		BufferString newlnm = lsnames.get( lsidx );
+		newlnm.add( "-" );
+		newlnm.add( lnames.get(lidx) );
+		data->setLineName( newlnm );
+	    }
+
+	    RefMan<Geometry2D> geom2d = new Geometry2D( data.release() );
+	    uiString errormsg;
+	    PosInfo::Line2DKey l2dkey =
+		S2DPOS().getLine2DKey( lsnames.get(lsidx), lnames.get(lidx) );
+	    const char* crfromstr = l2dkey.toString();
+	    if ( !geomwriter->write(*geom2d,errormsg,crfromstr) )
+	    {
+		errmsg = tr(
+		    "Unable to convert 2D geometries to OD5.0 format.\n%1").
+								arg( errormsg );
+		return false;
+	    }
+	}
+    }
+
+    if ( fetchedgeometry )
+    {
+	ensureSIPresent();
+	fillGeometries( nullptr );
+    }
+
+    return true;
+}
+
+
+bool GeometryManager::hasDuplicateLineNames()
+{
+    BufferStringSet lsnames;
+    S2DPOS().getLineSets( lsnames );
+    BufferStringSet linenames;
+    for ( int lsidx=0; lsidx<lsnames.size(); lsidx++ )
+    {
+	BufferStringSet lnames;
+	S2DPOS().getLines( lnames, lsnames.get(lsidx).buf() );
+	for ( int totalidx=0; totalidx<linenames.size(); totalidx++ )
+	{
+	    for ( int lidx=0; lidx<lnames.size(); lidx++ )
+	    {
+		if ( lnames.get(lidx) == linenames.get(totalidx) )
+		    return true;
+	    }
+	}
+
+	linenames.add( lnames, false );
+    }
+
+    return false;
+}
+
+
+bool GeometryManager::write( Geometry& geom, uiString& errmsg )
+{
+    if ( !geom.is2D() )
+	return false;
+
+    RefMan<Geometry> keepgeom( &geom );
+    PtrMan<GeometryWriter> geomwriter =
+		    GeometryWriter::factory().create( sKey::TwoD() );
+    if ( !geomwriter->write(geom,errmsg) )
+	return false;
+
+    Threads::Locker locker( lock_ );
+    if ( indexOf(geom.getID()) < 0 )
+	addGeometry( geom );
+
+    return true;
+}
+
+
+Pos::GeomID GeometryManager::addNewEntry( Geometry* geom, uiString& errmsg )
+{
+    if ( !geom )
+	return Pos::GeomID::udf();
+
+    if ( !geom->is2D() )
+	return default3DGeomID();
+
+    Pos::GeomID geomid = getGeomID( geom->getName() );
+    if ( geomid.isValid() )
+	return geomid;
+
+    PtrMan<GeometryWriter> geomwriter =
+			    GeometryWriter::factory().create( sKey::TwoD() );
+
+    Threads::Locker locker( lock_ );
+    geomid = geomwriter->createNewGeomID( geom->getName() );
+    if ( !write(*geom,errmsg) )
+	return Pos::GeomID::udf();
+
+    return geomid;
+}
+
+
+bool GeometryManager::removeGeometry( const Pos::GeomID& geomid )
+{
+    Threads::Locker locker( lock_ );
+    const int index = indexOf( geomid );
+    if ( geometries_.validIdx(index) )
+    {
+	RefMan<Geometry> geom = geometries_.get( index );
+	if ( !geom )
+	    return false;
+
+	namemap_.erase( geom->getName() );
+	geomidmap_.erase( geom->getID().asInt() );
+	geometries_.removeSingle( index );
+	return true;
+    }
+
+    return false;
+}
+
+
+int GeometryManager::indexOf( const Pos::GeomID& geomid ) const
+{
+    auto it = geomidmap_.find( geomid.asInt() );
+    if ( it != geomidmap_.end() )
+	return it->second;
+
+    /*
+    for ( int idx=0; idx<geometries_.size(); idx++ )
+	if ( geometries_[idx]->getID() == geomid )
+	    return idx;
+    */
+
+    return -1;
+}
+
+
+bool GeometryManager::fillGeometries( TaskRunner* taskr )
+{
+    Threads::Locker locker( lock_ );
+    hasduplnms_ = hasDuplicateLineNames();
+    PtrMan<GeometryReader> geomreader =
+			    GeometryReader::factory().create( sKey::TwoD() );
+    RefObjectSet<Geometry> geometries;
+    const bool res = geomreader && geomreader->read( geometries, taskr );
+    if ( !res )
+	return false;
+
+    for ( int idx=0; idx<geometries.size(); idx++ )
+	addGeometry( *geometries.get(idx) );
+
+    geometryRead.trigger();
+    return true;
+}
+
+
+bool GeometryManager::updateGeometries( TaskRunner* taskr )
+{
+    Threads::Locker locker( lock_ );
+    PtrMan<GeometryReader> geomreader =
+		GeometryReader::factory().create( sKey::TwoD() );
+    return geomreader && geomreader->updateGeometries( geometries_, taskr );
+}
+
+
+bool GeometryManager::getList( BufferStringSet& names,
+			       TypeSet<Pos::GeomID>& geomids, bool is2d ) const
+{
+    Threads::Locker locker( lock_ );
+    names.erase();
+    geomids.erase();
+    for ( int idx=0; idx<geometries_.size(); idx++ )
+    {
+	ConstRefMan<Survey::Geometry> geom = geometries_.get( idx );
+	if ( !geom || geom->is2D() != is2d )
+	    continue;
+
+	names.add( geom->getName() );
+	geomids += geom->getID();
+    }
+
+    return true;
+}
+
+
+Pos::GeomID GeometryManager::findRelated( const Geometry& geomref,
+					  Geometry::RelationType& reltype,
+					  bool usezrg ) const
+{
+    int identicalidx=-1, supersetidx=-1, subsetidx=-1, relatedidx=-1;
+    for ( int idx=0; identicalidx<0 && idx<geometries_.size(); idx++ )
+    {
+	Geometry::RelationType rt = geometries_[idx]->compare( geomref, usezrg);
+	switch(rt)
+	{
+	    case Geometry::Identical : identicalidx = idx; break;
+	    case Geometry::SuperSet : supersetidx = idx; break;
+	    case Geometry::SubSet : subsetidx = idx; break;
+	    case Geometry::Related : relatedidx = idx; break;
+	    default: break;
+	}
+    }
+
+    if ( identicalidx >= 0 )
+    {
+	reltype = Geometry::Identical;
+	return geometries_[identicalidx]->getID();
+    }
+
+    if ( supersetidx >= 0 )
+    {
+	reltype = Geometry::SuperSet;
+	return geometries_[supersetidx]->getID();
+    }
+
+    if ( subsetidx >= 0 )
+    {
+	reltype = Geometry::SubSet;
+	return geometries_[subsetidx]->getID();
+    }
+
+    if ( relatedidx >= 0 )
+    {
+	reltype = Geometry::Related;
+	return geometries_[relatedidx]->getID();
+    }
+
+    reltype = Geometry::UnRelated;
+    return Pos::GeomID::udf();
+}
+
+} // namespace Survey

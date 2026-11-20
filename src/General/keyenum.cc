@@ -1,0 +1,79 @@
+/*+
+________________________________________________________________________
+
+ Copyright:	(C) 1995-2022 dGB Beheer B.V.
+ License:	https://dgbes.com/licensing
+________________________________________________________________________
+
+-*/
+
+#include "keyenum.h"
+
+static const char* nms[] =
+{
+	"----",
+	"Left Mouse",
+	"Right Mouse",
+	"Mid Mouse",
+	"Button Mask/Mouse",
+	"Shift",
+	"Control",
+	"Alt",
+	"Meta key",
+	"Button Mask/Key",
+	"Keypad",
+	0
+};
+
+const unsigned int transtbl[] =
+{ 0x00000000, 0x00000001, 0x00000002, 0x00000004, 0x000000ff, 0x02000000,
+  0x04000000, 0x08000000, 0x10000000, 0xfe000000, 0x20000000 };
+
+
+#define mImplButtonStateFunc( func, buttenum ) \
+bool OD::func( OD::ButtonState st ) \
+{ \
+    const unsigned int state = (unsigned int) st; \
+    const unsigned int mask = (unsigned int) buttenum; \
+    return (state & mask); \
+}
+
+mImplButtonStateFunc( leftMouseButton, LeftButton );
+mImplButtonStateFunc( middleMouseButton, MidButton );
+mImplButtonStateFunc( rightMouseButton, RightButton );
+mImplButtonStateFunc( shiftKeyboardButton, ShiftButton );
+mImplButtonStateFunc( ctrlKeyboardButton, ControlButton );
+mImplButtonStateFunc( altKeyboardButton, AltButton );
+
+
+OD::ButtonState OD::stateOf( const char* nmstr )
+{
+    StringView nm( nmstr );
+
+    if ( nm.isEmpty() ) return OD::NoButton;
+
+    for ( int idx=0; nms[idx]; idx++ )
+    {
+	if ( nm == nms[idx] )
+	    return (OD::ButtonState)(transtbl[idx]);
+    }
+
+    for ( int idx=0; nms[idx]; idx++ )
+    {
+	if ( *nms[idx] == *nm.str() )
+	    return (OD::ButtonState)(transtbl[idx]);
+    }
+
+    return OD::NoButton;
+}
+
+
+const char* OD::nameOf( OD::ButtonState state )
+{
+    for ( int idx=0; nms[idx]; idx++ )
+    {
+	if ( transtbl[idx] == (int)state )
+	    return nms[idx];
+    }
+    return nms[0];
+}

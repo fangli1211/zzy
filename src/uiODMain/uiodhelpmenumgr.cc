@@ -1,0 +1,256 @@
+/*+
+________________________________________________________________________
+
+ Copyright:	(C) 1995-2022 dGB Beheer B.V.
+ License:	https://dgbes.com/licensing
+________________________________________________________________________
+
+-*/
+
+#include "uiodhelpmenumgr.h"
+
+#include "uidialog.h"
+#include "uigeninput.h"
+#include "uihelpview.h"
+#include "uilabel.h"
+#include "uimenu.h"
+#include "uimsg.h"
+#include "uiodmenumgr.h"
+#include "uiodstdmenu.h"
+#include "uitextedit.h"
+
+#include "buildinfo.h"
+#include "file.h"
+#include "genc.h"
+#include "legal.h"
+#include "oddirs.h"
+#include "odver.h"
+#include "oscommand.h"
+#include "osgver.h"
+#include "ziputils.h"
+
+
+#define mInsertItem(mnu,txt,id,icn,sc) \
+{ \
+    auto* itm = new uiAction(txt,mCB(mnumgr_,uiODMenuMgr,handleClick));\
+    mnu->insertAction( itm, id ); \
+    itm->setShortcut( sc ); \
+    itm->setIcon( icn ); \
+}
+
+
+uiODHelpMenuMgr::uiODHelpMenuMgr( uiODMenuMgr* mm )
+    : mnumgr_( mm )
+    , helpmnu_( mm->helpMnu() )
+{
+    docmnu_ = new uiMenu( tr("Documentation") );
+    helpmnu_->addMenu( docmnu_ );
+    mInsertItem( docmnu_, tr("OpendTect User Documentation"), mUserDocMnuItm,
+		 "documentation", "F1" );
+    mInsertItem( docmnu_, tr("Programmer's Manual"), mProgrammerMnuItm,
+		 "programmer", 0 );
+    mInsertItem( docmnu_, tr("Administrator's Manual"), mAdminMnuItm, 0, 0 );
+
+    mInsertItem( helpmnu_, tr("How-To Instructions"), mWorkflowsMnuItm, 0, 0 );
+    mInsertItem( helpmnu_, tr("Training Manual"), mTrainingManualMnuItm, 0, 0 );
+    mInsertItem( helpmnu_, tr("Release Notes"), mReleaseNotesItm, 0, 0 );
+    mInsertItem( helpmnu_, tr("Videos"), mTrainingVideosMnuItm, "video", 0 );
+    mInsertItem( helpmnu_, tr("Attributes Table"), mAttribMatrixMnuItm,
+		 "attributematrix", 0 );
+    mInsertItem( helpmnu_, tr("Online Support"), mSupportMnuItm, 0, 0 );
+    mInsertItem( helpmnu_, tr("Keyboard shortcuts"),
+		 mShortcutsMnuItm, "keyboard", "?" );
+    if ( legalInformation().size() )
+	mInsertItem( helpmnu_, tr("Legal"), mLegalMnuItm, "legal", 0);
+    mInsertItem( helpmnu_, tr("About OpendTect"), mAboutMnuItm, "about", 0 );
+}
+
+
+uiODHelpMenuMgr::~uiODHelpMenuMgr()
+{
+}
+
+
+uiMenu* uiODHelpMenuMgr::getDocMenu()
+{ return docmnu_; }
+
+
+void uiODHelpMenuMgr::handle( int id )
+{
+    switch( id )
+    {
+	case mLegalMnuItm:
+	{
+	    showLegalInfo();
+	} break;
+	case mAboutMnuItm:
+	{
+	    uiMSG().aboutOpendTect( getAboutString() );
+	} break;
+	case mAdminMnuItm:
+	{
+	    HelpProvider::provideHelp( HelpKey("admin",0) );
+	} break;
+	case mProgrammerMnuItm:
+	{
+	    HelpProvider::provideHelp( HelpKey("dev",0) );
+	} break;
+	case mSupportMnuItm:
+	{
+	    const HelpKey key( WebsiteHelp::sKeyFactoryName(),
+			       WebsiteHelp::sKeySupport() );
+	    HelpProvider::provideHelp( key );
+	} break;
+	case mTrainingManualMnuItm:
+	{
+	    HelpProvider::provideHelp( HelpKey("tm",0) );
+	} break;
+	case mWorkflowsMnuItm:
+	{
+	    HelpProvider::provideHelp( HelpKey("wf",0) );
+	} break;
+	case mTrainingVideosMnuItm:
+	{
+	    const HelpKey key( WebsiteHelp::sKeyFactoryName(),
+			       WebsiteHelp::sKeyVideos() );
+	    HelpProvider::provideHelp( key );
+	} break;
+
+	case mAttribMatrixMnuItm:
+	{
+	    const HelpKey key( WebsiteHelp::sKeyFactoryName(),
+			       WebsiteHelp::sKeyAttribMatrix() );
+	    HelpProvider::provideHelp( key );
+	} break;
+	case mShortcutsMnuItm:
+	{
+	    showShortKeys();
+	} break;
+	case mReleaseNotesItm:
+	{
+	    uiODApplMgr::showReleaseNotes( false );
+	} break;
+	case mFreeProjects:
+	case mCommProjects:
+	{
+	    const char* keystr = id==mFreeProjects
+					? WebsiteHelp::sKeyFreeProjects()
+					: WebsiteHelp::sKeyCommProjects();
+	    const HelpKey key( WebsiteHelp::sKeyFactoryName(), keystr );
+	    HelpProvider::provideHelp( key );
+	} break;
+	default:
+	{
+	    HelpProvider::provideHelp( HelpKey("od",0) );
+	}
+    }
+}
+
+
+void uiODHelpMenuMgr::showShortKeys()
+{
+    const BufferString imgpath = GetSWSetupShareFileName( "shortkeys.png" );
+    if ( !File::exists(imgpath.buf()) )
+	return;
+
+    const BufferString title( "Keyboard Shortcuts and Mouse Controls" );
+    OS::MachineCommand machcomm( GetODApplicationName("od_ImageViewer"),
+				 imgpath, title );
+    OS::CommandLauncher cl( machcomm );
+    if ( !cl.execute(OS::RunInBG) )
+	uiMSG().error( cl.errorMsg() );
+}
+
+
+uiString uiODHelpMenuMgr::getAboutString()
+{
+    BufferString str( "<html>" );
+    str.set( "<h2>OpendTect v" ).add( GetFullODVersion() ).add("</h2><br>");
+
+    str.add( "Built on " ).add( mBUILD_DATE ).add( "<br>" )
+       .add( "From revision " ).add( mVCS_VERSION ).add( "<br><br>" );
+
+    str.add( "Based on Qt " ).add( GetQtVersion() )
+       .add( ", OSG " ).add( GetOSGVersion() ).add( ",<br>" )
+       .add( "zlib " ).add( ZipUtils::getZLibVersion() ).add( ",<br>" )
+       .add( "OpenSSL " ).add( mOPENSSL_VERSION ).add( ",<br>" )
+       .add( "SQLite3 " ).add( mSQLITE_VERSION ).add( ",<br>" )
+       .add( GetCompilerVersionStr() ).add( "<br>" );
+#ifdef __mac__
+    BufferString compstr( "Running " );
+# ifdef __macarm__
+    compstr.add( "arm64" );
+# else
+    compstr.add( "intel" );
+# endif
+    compstr.add( " binaries" );
+    str.add( compstr.str() ).add( "<br>" );
+#endif
+    str.add( "<br>" );
+
+    str.add( mCOPYRIGHT_STRING ).add( "<br>" )
+       .add( "OpendTect is released under a triple licensing scheme. "
+	     "For more information, click "
+	     "<a href=\"https://dgbes.com/index.php/products/licenses\">"
+	     "here</a>.<br>" );
+    str.add( "</html>" );
+    return toUiString(str);
+}
+
+
+class uiODLegalInfo : public uiDialog
+{ mODTextTranslationClass(uiODLegalInfo);
+public:
+
+uiODLegalInfo(uiParent* p)
+    : uiDialog(p,Setup(tr("Legal information"),mNoHelpKey))
+{
+    setCtrlStyle( CloseOnly );
+    auto* label = new uiLabel( this,
+	    tr("OpendTect has incorporated code from various "
+	       "open source projects that are licensed under different "
+	       "licenses.") );
+
+    uiStringSet usernames = legalInformation().getUserNames();
+    ArrPtrMan<int> sortidxs = usernames.getSortIndexes( true, true );
+    int* sortidxsptr = sortidxs.ptr();
+    usernames.useIndexes( sortidxsptr );
+    factorynames_ = legalInformation().getNames();
+    factorynames_.useIndexes( sortidxsptr );
+
+    textsel_ = new uiGenInput( this, tr("Project"),
+			       StringListInpSpec(usernames) );
+    textsel_->valueChanged.notify( mCB(this,uiODLegalInfo,selChgCB) );
+    textsel_->attach( alignedBelow, label );
+
+    textfld_ = new uiTextEdit( this );
+    textfld_->attach( alignedBelow, textsel_ );
+
+    selChgCB( 0 );
+}
+
+private:
+
+void selChgCB( CallBacker* )
+{
+    const int sel = textsel_->getIntValue();
+    const BufferString& key = factorynames_.get( sel );
+    PtrMan<uiString> newtext = legalInformation().create( key );
+    if ( newtext )
+	textfld_->setText( *newtext );
+    else
+	textfld_->setText( "" );
+}
+
+    BufferStringSet	factorynames_;
+
+    uiGenInput*		textsel_;
+    uiTextEdit*		textfld_;
+};
+
+
+void uiODHelpMenuMgr::showLegalInfo()
+{
+    uiODLegalInfo dlg( ODMainWin() );
+    dlg.go();
+}

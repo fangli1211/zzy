@@ -1,0 +1,84 @@
+#pragma once
+/*+
+________________________________________________________________________
+
+ Copyright:	(C) 1995-2022 dGB Beheer B.V.
+ License:	https://dgbes.com/licensing
+________________________________________________________________________
+
+-*/
+
+#include "uiwellmod.h"
+#include "callback.h"
+#include "bufstring.h"
+
+class MouseEventHandler;
+class uiWellDahDisplay;
+
+namespace Well { class Marker; }
+
+mExpClass(uiWell) uiWellDisplayControl : public CallBacker
+{
+public:
+				uiWellDisplayControl(uiWellDahDisplay&);
+				~uiWellDisplayControl();
+
+    void			addDahDisplay(uiWellDahDisplay&);
+    void			removeDahDisplay(uiWellDahDisplay&);
+    void			clear();
+
+    bool			isMouseDown() const 	{ return ismousedown_;} 
+    void			setMouseDown(bool yn)   { ismousedown_ = yn; } 
+    bool			isCtrlPressed() const	{return isctrlpressed_;}
+    void			setCtrlPressed(bool);
+
+    const uiWellDahDisplay*	selDahDisplay() const	{ return seldisp_; }
+    const Well::Marker*		selMarker() const	{ return selmarker_; }
+    const Well::Marker*		lastValidMarker() const {return lastselmarker_;}
+
+    void			setSelMarker(const Well::Marker*);
+
+    float			time() const 	{ return time_; }
+    float			dah() const	{ return dah_; }
+    float			xPos() const	{ return xpos_; }
+    float			yPos() const	{ return ypos_; }
+
+    MouseEventHandler*		mouseEventHandler();
+    
+    Notifier<uiWellDisplayControl>  posChanged;
+    Notifier<uiWellDisplayControl>  mousePressed;
+    Notifier<uiWellDisplayControl>  mouseReleased;
+
+    Notifier<uiWellDisplayControl> markerSel;
+
+protected:
+
+    ObjectSet<uiWellDahDisplay> logdisps_;
+    uiWellDahDisplay*		seldisp_	= nullptr;
+
+    BufferString                info_;
+    bool			ismousedown_	= false;
+    bool			isctrlpressed_	= false;
+
+    const Well::Marker*		selmarker_	= nullptr;
+    const Well::Marker*		lastselmarker_	= nullptr;
+
+    void			highlightMarker(const Well::Marker&,bool);
+    MouseEventHandler& 		mouseEventHandler(int);
+
+    void 			getPosInfo(BufferString&) const;
+    bool			isDrawnMarker(const Well::Marker*) const;
+    float 			mousePos() const; 
+    
+    float			time_		= 0.f;
+    float			dah_		= 0.f;
+    float			xpos_		= 0.f;
+    float			ypos_		= 0.f;
+
+    void 			mouseMovedCB(CallBacker*);
+    void                        mousePressedCB(CallBacker*);
+    void                        mouseReleasedCB(CallBacker*);
+    void			setPosInfo(CallBacker*);
+    void			setSelDahDisplay(CallBacker*);
+    void			setSelMarkerCB(CallBacker*);
+};

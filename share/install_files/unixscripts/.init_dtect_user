@@ -1,0 +1,56 @@
+#!/bin/csh -f
+#________________________________________________________________________
+#
+# Copyright:	(C) 1995-2023 dGB Beheer B.V.
+# License:	https://dgbes.com/licensing
+#________________________________________________________________________
+#
+# OpendTect: Initialize user files and directories
+#
+
+#-- set DTECT_HOME
+
+if ( ! $?DTECT_HOME ) then
+
+    if ( ! $?HOME ) then 
+	echo "No DTECT_HOME nor HOME directory defined."
+	echo "Please correct this."
+	exit 1
+    endif
+
+    setenv DTECT_HOME "$HOME"
+
+endif
+
+#-- set DTECT_SETTINGS
+
+if ( ! $?DTECT_SETTINGS ) then
+    setenv DTECT_SETTINGS "$DTECT_HOME/.od"
+endif
+
+if ( ! -e "$DTECT_SETTINGS" ) then
+    mkdir "$DTECT_SETTINGS"
+endif
+
+if ( ! -e "$DTECT_SETTINGS" ) then
+    echo "Cannot write to settings dir: $DTECT_SETTINGS ..."
+    echo "Please correct this."
+    exit 1
+endif
+
+
+#-----------------------------------------------------
+# Extra initialisations
+
+set nonomatch=yes
+
+cd "$DTECT_SETTINGS"
+
+foreach fil ( odinit.* )
+    if ( -r "$fil" ) source "$fil"
+end
+
+if ( ! $?WORK && $?HOME ) then
+    setenv WORK "$HOME/ODWork"
+endif
+

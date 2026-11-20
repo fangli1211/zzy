@@ -1,0 +1,73 @@
+#pragma once
+/*+
+________________________________________________________________________
+
+ Copyright:	(C) 1995-2022 dGB Beheer B.V.
+ License:	https://dgbes.com/licensing
+________________________________________________________________________
+
+-*/
+
+#include "seismod.h"
+#include "executor.h"
+#include "binid.h"
+#include "samplingdata.h"
+#include "trckeysampling.h"
+
+class Scaler;
+class SeisTrc;
+class SeisTrcBuf;
+class SeisTrcReader;
+class SeisTrcWriter;
+
+
+/*!\brief Merges 2D and 3D post-stack data */
+
+mExpClass(Seis) SeisMerger : public Executor
+{ mODTextTranslationClass(SeisMerger);
+public:
+
+			SeisMerger(const ObjectSet<IOPar>& in,const IOPar& out,
+				   bool is2d);
+			SeisMerger(const IOPar&);	//For post-processing
+    virtual		~SeisMerger();
+
+    uiString		uiMessage() const override;
+    od_int64		nrDone() const override		{ return nrpos_; }
+    od_int64		totalNr() const override	{ return totnrpos_; }
+    uiString		uiNrDoneText() const override
+			{ return tr("Positions handled"); }
+    int			nextStep() override;
+    void		setScaler(Scaler*);
+
+    bool		stacktrcs_; //!< If not, first trace will be used
+
+protected:
+
+    bool			is2d_;
+    ObjectSet<SeisTrcReader>	rdrs_;
+    TypeSet<TrcKeySampling>	rdrhsamps_;
+    SeisTrcWriter*		wrr_;
+    int				currdridx_;
+    int				nrpos_;
+    int				totnrpos_;
+    uiString			errmsg_;
+
+    BinID			curbid_;
+    TrcKeySampling		hsamp_;
+    SeisTrcBuf&			trcbuf_;
+    int				nrsamps_;
+    SamplingData<float>		sd_;
+    Scaler*			scaler_;
+
+    void			init3DWorkSampling();
+    bool			posInAnyInput(const BinID&) const;
+    SeisTrc*			getNewTrc();
+    SeisTrc*			getTrcFrom(SeisTrcReader&);
+    void			get3DTraces();
+    SeisTrc*			getStacked(SeisTrcBuf&);
+    bool			toNextPos();
+    int				writeTrc(SeisTrc*);
+    int				writeFromBuf();
+
+};

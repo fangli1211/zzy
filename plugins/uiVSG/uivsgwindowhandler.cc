@@ -1,0 +1,126 @@
+/*+
+________________________________________________________________________
+
+ Copyright:	(C) 1995-2026 dGB Beheer B.V.
+ License:	https://dgbes.com/licensing
+________________________________________________________________________
+
+-*/
+
+#include "uivsgwindowhandler.h"
+
+#include "uivsgwindow.h"
+
+#include "visvsgsurvscene.h"
+#include "vsggeotrackball.h"
+
+#include <QGuiApplication>
+
+#include <vsg/ui/KeyEvent.h>
+#include <vsg/ui/PointerEvent.h>
+
+uiVSGWindowHandler::uiVSGWindowHandler( dGBVSGWindow* window )
+    : window_(window)
+{}
+
+
+void uiVSGWindowHandler::setTrackball( vsgGeo::Trackball* trackball )
+{
+    trackball_ = trackball;
+}
+
+
+void uiVSGWindowHandler::setScene( ODVsg::Scene* scene )
+{
+    scene_ = scene;
+}
+
+
+void uiVSGWindowHandler::setViewMode( bool yn )
+{
+    viewmode_ = yn;
+    if ( scene_ )
+	scene_->setInteractionEnabled( !yn );
+
+    syncCursor();
+    syncPointerPolicy();
+}
+
+
+void uiVSGWindowHandler::syncCursor()
+{
+    const bool ctrl = QGuiApplication::queryKeyboardModifiers() &
+		      Qt::ControlModifier;
+    MouseCursor::Shape shape = MouseCursor::Arrow;
+    if ( viewmode_ )
+	shape = MouseCursor::PointingHand;
+    else if ( ctrl )
+	shape = MouseCursor::Cross;
+
+    if ( window_ )
+	window_->setCursor( shape );
+}
+
+
+void uiVSGWindowHandler::syncPointerPolicy()
+{
+    const bool ctrl = QGuiApplication::queryKeyboardModifiers() &
+		      Qt::ControlModifier;
+    int mask = int(vsg::BUTTON_MASK_2) | int(vsg::BUTTON_MASK_3);
+    if ( viewmode_ )
+	mask |= int(vsg::BUTTON_MASK_1);
+
+    if ( trackball_ )
+    {
+	trackball_->enableDragging( vsg::ButtonMask(mask) );
+	trackball_->setLeftButtonPans( viewmode_ && ctrl );
+    }
+
+    const bool active = !viewmode_;
+    ODVsg::DataObjectGroup* group = scene_ ? scene_->vsgGroup() : nullptr;
+    if ( group && (group->isPickable(true)!=active ||
+		   !group->isPickable(false)) )
+	group->setPickable( active, true );
+}
+
+
+void uiVSGWindowHandler::refresh()
+{
+    syncCursor();
+    syncPointerPolicy();
+}
+
+
+void uiVSGWindowHandler::apply( vsg::ButtonPressEvent& )
+{
+    refresh();
+}
+
+
+void uiVSGWindowHandler::apply( vsg::ButtonReleaseEvent& )
+{
+    refresh();
+}
+
+
+void uiVSGWindowHandler::apply( vsg::MoveEvent& )
+{
+    refresh();
+}
+
+
+void uiVSGWindowHandler::apply( vsg::KeyPressEvent& ev )
+{
+    refresh();
+    if ( ev.keyBase==vsg::KEY_Escape && ev.repeatCount==0 )
+    {
+	setViewMode( !viewmode_ );
+	ev.handled = true;
+    }
+}
+
+
+void uiVSGWindowHandler::apply( vsg::KeyReleaseEvent& )
+{
+    refresh();
+}

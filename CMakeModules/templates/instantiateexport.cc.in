@@ -1,0 +1,15 @@
+/*+
+________________________________________________________________________
+
+ Copyright:	(C) 1995-@YEAR@ dGB Beheer B.V.
+ License:	https://dgbes.com/licensing
+________________________________________________________________________
+
+-*/
+
+/*This file is generated automatically by CMAKE and is used to instantiate
+  exlicit template exports by including the export-module for this module. */
+
+#include "@OD_MODULE_NAME_LOWER@mod.h"
+
+@EXPORTFILEHEADER@

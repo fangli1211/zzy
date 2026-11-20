@@ -1,0 +1,38 @@
+#pragma once
+/*+
+________________________________________________________________________
+
+ Copyright:	(C) 1995-2022 dGB Beheer B.V.
+ License:	https://dgbes.com/licensing
+________________________________________________________________________
+
+-*/
+
+#include "geometrymod.h"
+#include "faultstickset.h"
+
+namespace Geometry
+{
+
+mExpClass(Geometry) FaultStickSurface : public FaultStickSet
+{
+public:
+			FaultStickSurface();
+			~FaultStickSurface();
+
+    FaultStickSurface&	operator =(const FaultStickSurface&);
+
+    bool		insertStick(const Coord3& firstpos,
+			    const Coord3& editnormal,int stick=0,
+			    int firstcol=0,
+			    const Pos::GeomID& =Pos::GeomID::udf()) override;
+
+    bool		areSticksVertical() const;
+    void		setSticksVertical(bool yn)	{ sticksvertical_=yn; }
+
+protected:
+
+    bool		sticksvertical_		= true;
+};
+
+} // namespace Geometry

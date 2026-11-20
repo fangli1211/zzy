@@ -1,0 +1,27 @@
+#________________________________________________________________________
+#
+# Copyright:    dGB Beheer B.V.
+# License:      https://dgbes.com/index.php/licensing
+#________________________________________________________________________
+#
+# CMake script to define od packages
+#
+
+if ( WIN32 OR ${PACKAGE_TYPE} STREQUAL "Devel" )
+    list( APPEND PACKAGELIST develdefs develguidefs )
+endif()
+
+if ( ${PACKAGE_TYPE} STREQUAL "Production" )
+    list( APPEND PACKAGELIST basedatadefs basedefs baseguidefs )
+    if ( BUILD_USERDOC AND EXISTS "${USERDOC_PROJECT}" )
+	list( APPEND PACKAGELIST docdefs )
+    endif()
+else()
+    if ( BUILD_DOCUMENTATION AND EXISTS "${CMAKE_INSTALL_PREFIX}/doc/Programmer" )
+	list( APPEND PACKAGELIST classdocdefs )
+    endif()
+endif()
+
+if ( WIN32 )
+    list( APPEND PACKAGELIST colopdefs )
+endif()

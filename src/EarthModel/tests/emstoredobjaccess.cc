@@ -1,0 +1,517 @@
+/*+
+________________________________________________________________________
+
+ Copyright:	(C) 1995-2022 dGB Beheer B.V.
+ License:	https://dgbes.com/licensing
+________________________________________________________________________
+
+-*/
+
+#include "batchprog.h"
+
+#include "arrayndimpl.h"
+#include "datapointset.h"
+#include "embody.h"
+#include "emfault.h"
+#include "emfaultstickset.h"
+#include "emhorizon2d.h"
+#include "emhorizon3d.h"
+#include "emioobjinfo.h"
+#include "emstoredobjaccess.h"
+#include "emsurfaceauxdata.h"
+#include "emsurfaceiodata.h"
+#include "emsurfacetr.h"
+#include "horizonsorter.h"
+#include "ioman.h"
+#include "multiid.h"
+#include "survinfo.h"
+
+
+#define valTest( val, expval, defeps, desc ) \
+{ \
+    errmsg.set( "Expected: " ).add( toStringPrecise(expval) ) \
+	  .add( "; Retrieved: " ).add( toStringPrecise(val) ); \
+    mRunStandardTestWithError(mIsEqual(val,expval,defeps),desc,errmsg.str()); \
+}
+
+
+static bool testEMStoredObjAccess( od_ostream& strm )
+{
+    EM::StoredObjAccess soa;
+    mRunStandardTest( soa.add( MultiID(100020,2) ),
+	      "EM::StoredObjAccess: Add Horizon 3D (1-Top)" );
+    mRunStandardTest( soa.add( MultiID(100020,21) ),
+	      "EM::StoredObjAccess: Add Horizon 2D (2D Demo0 - FS4)" );
+    mRunStandardTest( soa.add( MultiID(100020,5) ),
+	      "EM::StoredObjAccess: Add FaultStickSet (SSIS-Grid-Faultsticks)");
+    mRunStandardTest( soa.add( MultiID(100020,9) ),
+	      "EM::StoredObjAccess: Add Fault (SingleStickPickedOn426)" );
+    mRunStandardTest( soa.add( MultiID(100020,4) ),
+	      "EM::StoredObjAccess: Add Geobody (Slumps-2b)" );
+    mRunStandardTest( !soa.add( MultiID(100020,99795) ),
+	      "EM::StoredObjAccess: Add non-existing MultiID should fail" );
+    soa.dismiss( MultiID(100020,99795) );
+
+    PtrMan<Task> exec = soa.reader();
+    TextTaskRunner runner( strm );
+    const bool res = exec && runner.execute( *exec.ptr() );
+    mRunStandardTestWithError( res, exec->name(), ::toString(soa.getError()) );
+    exec = nullptr;
+
+    mDynamicCastGet(const EM::Horizon3D*,hor3d,soa.object(0))
+    mRunStandardTest(hor3d,"object(0) must be an Horizon3D")
+    mDynamicCastGet(const EM::Horizon2D*,hor2d,soa.object(1))
+    mRunStandardTest(hor2d,"object(1) must be an Horizon2D")
+    mDynamicCastGet(const EM::FaultStickSet*,fss,soa.object(2))
+    mRunStandardTest(fss,"object(2) must be a FaultStickSet")
+    mDynamicCastGet(const EM::Fault*,flt,soa.object(3))
+    mRunStandardTest(flt,"object(3) must be a Fault")
+    mDynamicCastGet(const EM::Body*,body,soa.object(4))
+    mRunStandardTest(body,"object(4) must be a Geobody")
+
+    BufferString errmsg;
+    const Coord crd_ix_400_900( 620620, 6081472 );
+    float zval = hor3d->getZValue( crd_ix_400_900 );
+    valTest( zval, 0.549256265f, 1e-6f, "Horizon 3D Z Value check" );
+
+    const Coord crd_lt_Line_900( 619665.70, 6088541.50 );
+    zval = hor2d->getZValue( crd_lt_Line_900 );
+    valTest( zval, 0.92633921f, 1e-6f, "Horizon 2D Z Value check" );
+
+    const EM::FaultStickSetGeometry& fssgeom = fss->geometry();
+    mRunStandardTest( fssgeom.nrSticks() == 4 && fssgeom.nrKnots(0) == 12,
+		      "Check nr Sticks and knots of Stick in FaultStickSet" );
+
+    const EM::FaultGeometry& fltgeom = flt->geometry();
+    getNonConst(fltgeom).selectAllSticks();
+    mRunStandardTest( fltgeom.nrSelectedSticks() == 2,
+		      "Check nr Sticks and knots of Stick in Fault" );
+
+    TrcKeyZSampling cs;
+    mRunStandardTest( body->getBodyRange(cs),"Get body ranges")
+    mRunStandardTest( cs.hsamp_.start_.inl()>390 && cs.hsamp_.stop_.crl()<870,
+		      "Check on body ranges" )
+
+    return true;
+}
+
+
+static bool testHorizonSorting( od_ostream& strm, bool is2d )
+{
+    TypeSet<MultiID> inputids;
+    if ( is2d )
+    {
+	inputids += MultiID(100020,82); // Deep
+	inputids += MultiID(100020,31); // Base
+	inputids += MultiID(100020,32); // Top
+	inputids += MultiID(100020,80); // Shallow
+    }
+    else
+    {
+	inputids += MultiID(100020,7); // Flat at 1100ms
+	inputids += MultiID(100020,3); // Base horizon
+	inputids += MultiID(100020,2); // Top horizon
+	inputids += MultiID(100020,6); // Flat at 1000ms
+    }
+
+    HorizonSorter sorter( inputids, is2d );
+    TextTaskRunner ttr( strm );
+    const bool res = ttr.execute( sorter );
+    mRunStandardTestWithError( res,
+		BufferString("Sorting ", is2d ? "2D" : "3D", " horizons"),
+		toString(sorter.uiMessage()) );
+
+    TypeSet<MultiID> sortedids;
+    sorter.getSortedList( sortedids );
+    mRunStandardTest( sortedids.size() == inputids.size(),
+		      "Number of sorted horizons" );
+    if ( is2d )
+    {
+	mRunStandardTest( sortedids[0] == MultiID(100020,80) &&
+			  sortedids[1] == MultiID(100020,32) &&
+			  sortedids[2] == MultiID(100020,31) &&
+			  sortedids[3] == MultiID(100020,82),
+			  "2D Horizons are properly sorted" );
+    }
+    else
+    {
+	mRunStandardTest( sortedids[0] == MultiID(100020,2) &&
+			  sortedids[1] == MultiID(100020,3) &&
+			  sortedids[2] == MultiID(100020,6) &&
+			  sortedids[3] == MultiID(100020,7),
+			  "3D Horizons are properly sorted" );
+    }
+
+    return true;
+}
+
+
+static RefMan<EM::Horizon3D> getHorizon3D( const char* horname, bool create,
+					 BufferString& errmsg )
+{
+    EM::EMObject* horobj;
+    if ( create )
+    {
+	const EM::ObjectID horid = EM::EMM().createObject(
+					    EM::Horizon3D::typeStr(), horname );
+	horobj = EM::EMM().getObject( horid );
+    }
+    else
+    {
+	PtrMan<IOObj> ioobj = IOM().get( horname,
+				  EMHorizon3DTranslatorGroup::sGroupName() );
+	if ( !ioobj )
+	{
+	    errmsg = toString( IOM().uiMessage() );
+	    return nullptr;
+	}
+	horobj = EM::EMM().loadIfNotFullyLoaded( ioobj->key() );
+    }
+
+    mDynamicCastGet(EM::Horizon3D*,hor3d,horobj)
+    return hor3d;
+}
+
+
+static bool removeHorizon3D( const char* hornm )
+{
+    PtrMan<IOObj> ioobj = IOM().get( hornm,
+				     EMHorizon3DTranslatorGroup::sGroupName() );
+    mRunStandardTestWithError( ioobj && IOM().to(ioobj->key()) &&
+			       IOM().implRemove(ioobj->key(), true),
+			      "Remove horizon", toString(IOM().uiMessage()) );
+
+    return true;
+}
+
+
+static bool createHorizon3D( const char* hornm )
+{
+    BufferString errmsg;
+    RefMan<EM::Horizon3D> newhor = getHorizon3D( hornm, true, errmsg );
+    mRunStandardTest( newhor.ptr(), "Create 3D horizon" );
+
+    const ZDomain::Info* zdom = &newhor->zDomain();
+    const float zfac = zdom && zdom->isTime() ?
+					    (float) zdom->userFactor() : 1.f;
+    const TrcKeySampling tks = SI().sampling( false ).hsamp_;
+    PtrMan<Array2D<float>> arr = new Array2DImpl<float>( tks.nrInl(),
+							 tks.nrCrl() );
+    for ( int i=0; i<arr->info().getSize(0); i++ )
+    {
+	for ( int j=0; j<arr->info().getSize(1); j++ )
+	{
+	    const float val = float(i+j) / zfac;
+	    arr->set( i, j, val );
+	}
+    }
+
+    if ( newhor->setArray2D(arr.ptr(), tks.start_, tks.step_, false) )
+    {
+	newhor->setFullyLoaded( true );
+	PtrMan<Task> saver = newhor->saver();
+	mRunStandardTest( saver && saver->execute(), "Save 3D horizon" );
+    }
+
+    const BufferString attribnm( "attrib_1" ) ;
+    int auxidx = newhor->auxdata.auxDataIndex( attribnm.buf() );
+    if ( auxidx==-1 )
+	auxidx = newhor->auxdata.addAuxData( attribnm.buf() );
+
+    for (int i=0; i<arr->info().getSize(0); i++ )
+    {
+	for ( int j=0; j<arr->info().getSize(1); j++ )
+	{
+	    const TrcKey trckey = tks.trcKeyAt( i, j );
+	    newhor->auxdata.setAuxDataVal( auxidx, trckey,
+					   -arr->get(i,j)*zfac );
+	}
+    }
+    PtrMan<Task> auxsaver = newhor->auxdata.auxDataSaver( auxidx, true );
+    mRunStandardTest( auxsaver && auxsaver->execute(),
+		      "Save 3D horizon data" );
+
+    return true;
+}
+
+
+static bool testHorizon3D( const char* hornm )
+{
+    BufferString errmsg;
+    RefMan<EM::Horizon3D> hor3d = getHorizon3D( hornm, false, errmsg );
+    mRunStandardTestWithError( hor3d.ptr(), "Read 3D horizon", errmsg.str() );
+
+    PtrMan<Array2D<float>> arr = hor3d->createArray2D();
+    mRunStandardTest( arr, "Retrieve 3D horizon Z array" );
+
+    const ZDomain::Info* zdom = &hor3d->zDomain();
+    const float zfac = zdom && zdom->isTime() ?
+					    (float) zdom->userFactor() : 1.f;
+    bool allclose = true;
+    for ( int i=0; i<arr->info().getSize(0); i++ )
+    {
+	for ( int j=0; j<arr->info().getSize(1); j++ )
+	{
+	    if ( !mIsEqual(arr->get(i, j)*zfac, (i+j), 0.01) )
+	    {
+		allclose = false;
+		errmsg = "expected: ";
+		errmsg.add(i+j)
+		      .add(" but got: ")
+		      .add(arr->get(i,j)*zfac)
+		      .add(" at: ")
+		      .add(i).add(", ").add(j);
+		break;
+	    }
+	}
+	if ( !allclose )
+	    break;
+    }
+    mRunStandardTestWithError( allclose, "Check 3D horizon Z values",
+			       errmsg.str() );
+
+    PtrMan<Task> auxloader = hor3d->auxdata.auxDataLoader( "attrib_1" );
+    mRunStandardTest( auxloader && TaskRunner::execute(nullptr, *auxloader),
+		      "Read 3D horizon data" );
+
+    mRunStandardTest( hor3d->auxdata.hasAuxDataName("attrib_1"),
+		      "Check horizon has attribute" );
+
+    int iaux = hor3d->auxdata.auxDataIndex( "attrib_1" );
+    PtrMan<Array2D<float>> auxarr = hor3d->auxdata.createArray2D( iaux );
+    mRunStandardTest( auxarr, "Retrieve 3D horizon data array");
+
+    allclose = true;
+    for ( int i=0; i<arr->info().getSize(0); i++ )
+    {
+	for ( int j=0; j<arr->info().getSize(1); j++ )
+	{
+	    if ( !mIsEqual(arr->get(i,j)*zfac,-auxarr->get(i,j), 0.01) )
+	    {
+		allclose = false;
+		errmsg = "expected: ";
+		errmsg.add(-arr->get(i,j)*zfac)
+		      .add(" but got: ").add(auxarr->get(i,j))
+		      .add(" at: ").add(i).add(", ").add(j);
+		break;
+	    }
+	}
+	if ( !allclose )
+	    break;
+    }
+    mRunStandardTestWithError( allclose, "Check 3D horizon data values",
+			       errmsg.str() );
+
+    return true;
+}
+
+
+static EMSurfaceTranslator* getTranslator( EM::Horizon3D* hor3d )
+{
+    PtrMan<IOObj> ioobj = IOM().get( hor3d->multiID() );
+    if ( !ioobj )
+    {
+	return nullptr;
+    }
+
+    EMSurfaceTranslator* transl =
+	( EMSurfaceTranslator* )ioobj->createTranslator();
+    if ( !transl || !transl->startRead( *ioobj ) )
+    {
+	delete transl;
+	return nullptr;
+    }
+
+    return transl;
+}
+
+
+static bool testHorizon3dAuxData()
+{
+    auto& emm = EM::EMM();
+    RefMan<EM::EMObject> emobj = emm.loadIfNotFullyLoaded( MultiID(100020, 2) );
+    mDynamicCastGet( EM::Horizon3D*, hor3d, emobj.ptr() );
+
+    mRunStandardTestWithError( hor3d,
+			       "Loading horizon for aux data",
+			       "Failed to load horizon for aux data" );
+
+    const BufferString horname = hor3d->name();
+    const BufferString expectedname( "1-Top" );
+    mRunStandardTestWithError( horname == expectedname,
+			       "Validating horizon name for aux data",
+			       "Failed to validate horizon name for aux data" );
+
+    PtrMan<EMSurfaceTranslator> transl = getTranslator( hor3d );
+    mRunStandardTestWithError( transl, "Finding translator for aux data",
+			       "No suitable translator found for aux data" );
+
+    // Make a selection name set with fail cases and 2 correct auxdata names
+    EM::SurfaceIODataSelection& sel = transl->selections();
+    BufferStringSet attrnms = sel.sd.valnames;
+
+    BufferStringSet selattribs;
+    selattribs.add( "Fail0" ).add( "Fail1" );
+    selattribs.append( attrnms );
+    selattribs.add( "FailLast" );
+
+    hor3d->auxdata.removeAll();
+    TaskGroup loaders;
+    loaders.setName( "Loading Horizon Data" );
+    int nloaders = 0;
+
+    for ( const auto* attrname : selattribs )
+    {
+	const int fileidx = attrnms.indexOf( attrname->buf() );
+	if ( fileidx < 0 )
+	    continue;
+
+	auto* loader = hor3d->auxdata.auxDataLoader( fileidx );
+	if ( loader )
+	{
+	    loaders.addTask( loader );
+	    nloaders++;
+	}
+    }
+
+    mRunStandardTestWithError( nloaders==2,
+			       "Adding two loaders for aux data",
+			       "Found incorrect number of "
+			       "loaders for aux data" );
+
+    mRunStandardTestWithError( loaders.execute(),
+			       "Loading Horizon3d Aux data",
+			       "Failed to load Horizon3d Aux data" );
+
+    return true;
+}
+
+
+static bool testHorizon3dCopyGeom()
+{
+    auto& emm = EM::EMM();
+    RefMan<EM::EMObject> emobj = emm.loadIfNotFullyLoaded( MultiID(100020, 2) );
+    mDynamicCastGet( EM::Horizon3D*, hor3d, emobj.ptr() );
+
+    mRunStandardTestWithError( hor3d,
+			       "Loading horizon for copy geom",
+			       "Failed to load horizon for copy geom" );
+
+    BufferString horname = hor3d->name();
+    const BufferString newhorname = horname.add( "_copy" );
+
+    const char* typestr = EM::Horizon3D::typeStr();
+    const EM::ObjectID emid = emm.createObject( typestr, newhorname );
+    mDynamicCastGet( EM::Horizon3D*, tmphor3d, emm.getObject(emid) );
+    RefMan<EM::Horizon3D> newhor3d = tmphor3d;
+
+    mRunStandardTestWithError( newhor3d,
+			       "Creating new horizon for copy geom",
+			       "Failed to create new horizon for copy geom" );
+
+    const auto* geomel = hor3d->geometry().geometryElement();
+    auto* newgeomel = newhor3d->geometry().geometryElement();
+
+    mRunStandardTestWithError( geomel && newgeomel,
+			      "Getting geometry elements for copy geom",
+			      "Failed to get geometry elements for copy geom" );
+
+    *newgeomel = *geomel;
+
+    mRunStandardTestWithError( !newgeomel->isEmpty(),
+		    "Checking copied geometry elements for copy geom",
+		    "Copied geometry element is empty, after copy geom" );
+
+    mRunStandardTestWithError(
+	newgeomel->getArray()->totalSize() == geomel->getArray()->totalSize(),
+	"Checking copied geometry elements for copy geom",
+	"Copied geometry elements have incorrect size, after copy geom" );
+
+    BufferString errmsg;
+    const Coord crd_ix_400_900( 620620, 6081472 );
+    float zval = newhor3d->getZValue( crd_ix_400_900 );
+    valTest( zval, 0.549256265f, 1e-6f,
+	     "Horizon 3D Z Value check for copy geom" );
+
+    Geometry::BinIDSurface bids( *geomel );
+    mRunStandardTestWithError( !bids.isEmpty(),
+		    "Checking copied geometry elements for copy geom bids",
+		    "Copied geometry element is empty, after copy geom bids" );
+
+    const BinID bid = SI().transform( crd_ix_400_900 );
+    zval = bids.getZ( bid );
+    valTest( zval, 0.549256265f, 1e-6f,
+	     "Horizon 3D Z Value check for copy geom bids" );
+
+    return true;
+}
+
+
+static bool testHorizonReadSpeed( od_ostream& strm )
+{
+    TextTaskRunner runner( strm );
+
+    auto& emm = EM::EMM();
+    const MultiID horid( 100020, 2 );
+    PtrMan<Task> loaderptr = emm.objectLoader( horid );
+    mRunStandardTest( loaderptr, "Creating loader for read speed" )
+    Task& loader = *loaderptr;
+    mRunStandardTestWithError( runner.execute( loader ),
+		"Executing loader for read speed",
+		toString(loader.uiMessage()) )
+
+    RefMan<EM::EMObject> emobj = emm.getObject( horid );
+    mDynamicCastGet( EM::Horizon3D*, hor3d, emobj.ptr() );
+    mRunStandardTest( hor3d, "Casting emobject to Horizon3D" );
+
+    const EM::IOObjInfo info( horid );
+    mRunStandardTest( info.isOK(),
+			"Getting info for horizon for read speed" )
+    BufferStringSet attribnms;
+    info.getAttribNames( attribnms );
+    mRunStandardTest( attribnms.size() == 2,
+			"Getting attrib names for horizon for read speed" )
+    EM::SurfaceIOData sd;
+    uiString errmsg;
+    mRunStandardTestWithError( info.getSurfaceData(sd, errmsg ) &&
+		sd.valnames == attribnms,
+		"Getting surface data for horizon for read speed",
+		toString(errmsg) )
+    EM::SurfaceIODataSelection selsd( sd );
+    selsd.setDefault();
+
+    hor3d->auxdata.removeAll();
+    PtrMan<Task> auxloader = hor3d->auxdata.auxDataLoader();
+    mRunStandardTest( auxloader, "Creating aux data loader for read speed" )
+    mRunStandardTestWithError( runner.execute( *auxloader ),
+		"Executing aux data loader for read speed",
+		toString(auxloader->uiMessage()) )
+
+    RefMan<DataPointSet> dps = new DataPointSet( false );
+    PtrMan<Task> dpsfiller = hor3d->auxdata.createDataPointSetTask(*dps.ptr());
+    mRunStandardTestWithError( dpsfiller && runner.execute( *dpsfiller ),
+		"Filling a DataPointSet from all AuxData",
+		toString(dpsfiller->uiMessage()) )
+
+    return true;
+}
+
+
+mLoad1Module("EarthModel")
+
+bool BatchProgram::doWork( od_ostream& strm )
+{
+    const BufferString hor3dnm( "test_horizon3d" );
+    if ( !testEMStoredObjAccess(strm) ||
+	 !testHorizonSorting(strm,false) ||
+	 !testHorizonSorting(strm,true) ||
+	 !createHorizon3D(hor3dnm.str()) ||
+	 !testHorizon3D(hor3dnm.str()) ||
+	 !removeHorizon3D(hor3dnm.str()) ||
+	 !testHorizon3dAuxData() ||
+	 !testHorizon3dCopyGeom() ||
+	 !testHorizonReadSpeed(strm) )
+	return false;
+
+    return true;
+}

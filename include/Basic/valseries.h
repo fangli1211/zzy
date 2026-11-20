@@ -1,0 +1,185 @@
+#pragma once
+/*+
+________________________________________________________________________
+
+ Copyright:	(C) 1995-2022 dGB Beheer B.V.
+ License:	https://dgbes.com/licensing
+________________________________________________________________________
+
+-*/
+
+#include "basicmod.h"
+
+#include "coord.h"
+#include "paralleltask.h"
+
+#include <cstring>
+
+
+/*!
+\brief Interface to a series of values.
+
+  If the values are in contiguous memory, arr() should return non-null.
+*/
+
+template <class T>
+mClass(Basic) ValueSeries
+{
+public:
+
+    virtual		~ValueSeries()		{}
+
+    void		getValues(ValueSeries<T>&,od_int64 nrvals) const;
+    void		getValues(T*,od_int64 nrvals) const;
+
+    virtual ValueSeries<T>* clone() const			= 0;
+    virtual bool	isOK() const			{ return true; }
+
+    virtual T		value(od_int64) const		= 0;
+    virtual bool	writable() const		{ return false; }
+    virtual void	setValue(od_int64,T)		{}
+
+    virtual bool	canSetAll() const		{ return false; }
+    virtual void	setAll(T)			{}
+
+    virtual bool	selfSufficient() const		{ return false; }
+			/*!<\returns true if not depending on other objects */
+    virtual bool	reSizeable() const		{ return false; }
+    virtual bool	setSize(od_int64)		{ return false; }
+    virtual void	setEmpty()			{}
+
+    virtual T*		arr()				{ return nullptr; }
+    virtual const T*	arr() const			{ return nullptr; }
+
+    virtual od_int64	size() const			= 0;
+    virtual char	bytesPerItem() const		{ return sizeof(T); }
+
+    inline T		operator[](od_int64 idx) const	{ return value(idx); }
+};
+
+
+/*!\brief Gets ValueSeries.*/
+
+template <class T>
+mClass(Basic) ValueSeriesGetAll : public ParallelTask
+{
+public:
+
+ValueSeriesGetAll(const ValueSeries<T>& from,
+		  ValueSeries<T>& to, od_int64 nrelements )
+    : from_( from )
+    , to_( &to )
+    , toptr_( nullptr )
+    , nrelements_( nrelements )
+{
+}
+
+ValueSeriesGetAll(const ValueSeries<T>& from, T* to,
+		  od_int64 nrelements	)
+    : from_( from )
+    , toptr_( to )
+    , to_( nullptr )
+    , nrelements_( nrelements )
+{
+}
+
+od_int64 nrIterations() const override
+{
+    return nrelements_;
+}
+
+
+bool doPrepare( int ) override
+{
+    if ( !toptr_ && !to_ )
+	return false;
+
+    if ( from_.size() >= 0 && nrelements_ > from_.size() )
+	return false;
+
+    if ( !toptr_ && to_->size() >= 0 && nrelements_ > to_->size() )
+	return false;
+
+    return true;
+}
+
+
+bool doWork( od_int64 start, od_int64 stop, int ) override
+{
+    od_int64 nrleft = stop-start+1;
+    const T* fromarr = from_.arr();
+    T* toarr = toptr_ ? toptr_ : to_->arr();
+    if ( toarr && fromarr )
+    {
+	fromarr += start;
+	toarr += start;
+	const od_int64 sz = nrleft * from_.bytesPerItem();
+	std::memcpy( (void*)toarr, (const void*)fromarr, sz );
+    }
+    else if ( toarr )
+    {
+	toarr += start;
+	for ( od_int64 idx=start; idx<=stop; idx++, toarr++ )
+	    *toarr = from_.value( idx );
+    }
+    else if ( fromarr )
+    {
+	fromarr += start;
+	for ( od_int64 idx=start; idx<=stop; idx++, fromarr++ )
+	    to_->setValue(idx, *fromarr );
+    }
+    else
+    {
+	for ( od_int64 idx=start; idx<=stop; idx++ )
+	    to_->setValue(idx,from_.value(idx));
+    }
+
+    return true;
+}
+
+protected:
+
+    od_int64			nrelements_;
+    const ValueSeries<T>&	from_;
+    ValueSeries<T>*		to_;
+    T*				toptr_;
+
+};
+
+
+template <class T> inline
+void ValueSeries<T>::getValues( ValueSeries<T>& to, od_int64 nrvals ) const
+{
+    ValueSeriesGetAll<T> memsetter( *this, to, nrvals );
+    memsetter.execute();
+}
+
+
+template <class T> inline
+void ValueSeries<T>::getValues( T* to, od_int64 nrvals ) const
+{
+    ValueSeriesGetAll<T> memsetter( *this, to, nrvals );
+    memsetter.execute();
+}
+
+
+template <> inline
+bool ValueSeriesGetAll<Coord>::doWork( od_int64 start, od_int64 stop,
+				       int /*threadidx*/ )
+{
+    for ( od_int64 idx=start; idx<=stop; idx++ )
+	to_->setValue( idx, from_.value(idx) );
+
+    return true;
+}
+
+
+template <> inline
+bool ValueSeriesGetAll<Coord3>::doWork( od_int64 start, od_int64 stop,
+				        int /*threadidx*/ )
+{
+    for ( od_int64 idx=start; idx<=stop; idx++ )
+	to_->setValue( idx, from_.value(idx) );
+
+    return true;
+}

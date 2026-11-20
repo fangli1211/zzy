@@ -1,0 +1,184 @@
+#pragma once
+/*+
+________________________________________________________________________
+
+ Copyright:	(C) 1995-2022 dGB Beheer B.V.
+ License:	https://dgbes.com/licensing
+________________________________________________________________________
+
+-*/
+
+#include "uibasemod.h"
+#include "uiobj.h"
+#include "rowcol.h"
+#include "tablemodel.h"
+
+class ODTableView;
+class ODStyledItemDelegate;
+class ODUndoCommand;
+class QByteArray;
+class QSortFilterProxyModel;
+
+
+mExpClass(uiBase) uiTableView : public uiObject
+{
+    friend class		i_tableViewMessenger;
+public:
+    enum SelectionBehavior	{ SelectItems, SelectRows, SelectColumns };
+    enum SelectionMode		{ SingleSelection=1, ExtendedSelection=3,
+				  NoSelection=0 };
+    enum ResizeMode		{ Interactive=0, Fixed=2, Stretch=1,
+				  ResizeToContents=3 };
+
+				uiTableView(uiParent*,const char* nm);
+				~uiTableView();
+				mOD_DisableCopy(uiTableView)
+
+    void			setModel(TableModel*);
+    const TableModel*		getModel() const	{ return tablemodel_; }
+    TableModel*			getModel()		{ return tablemodel_; }
+    void			saveHorizontalHeaderState();
+    void			resetHorizontalHeader();
+
+    void			setNrFrozenColumns(int nrcols);
+    void			setContextMenuEnabled(bool);
+
+    void			setColumnStretchable(int,bool);
+    void			resizeColumnsToContents();
+    void			resizeColumnToContents(int column);
+    void			setColumnResizeMode(ResizeMode);
+				//!<Default is Stretch
+
+    void			setRowHeight(int height);
+    void			setRowHeight(int row,int height);
+    void			setRowResizeMode(ResizeMode);
+				//!<Default is ResizeToContents
+
+    void			setAlternatingRowColors(bool yn);
+				//!<Follows the displayed row order, thus
+				//!<also after sorting or hiding rows
+    bool			hasAlternatingRowColors() const;
+    void			setAlternatingRowColor(const OD::Color&);
+				//!<Default is a grey
+
+    void			setSectionsMovable(bool);
+    void			moveColumn(int from,int to);
+
+    void			setSortingEnabled(bool);
+    bool			isSortingEnabled() const;
+    void			sortByColumn(int col,bool asc=true);
+
+    void			setWordWrap(bool);
+    bool			wordWrap() const;
+
+    void			scrollTo(const RowCol&);
+				//!<Needs model RowCol
+
+    void			setRowHidden(int row,bool);
+    void			setRowsHidden(const TypeSet<int>&,bool);
+    bool			isRowHidden(int row) const;
+    void			getVisibleRows(TypeSet<int>&,
+					       bool mappedtosource) const;
+    void			setColumnHidden(int col,bool);
+    void			setColumnsHidden(const TypeSet<int>&,bool);
+    bool			isColumnHidden(int col) const;
+    void			getVisibleColumns(TypeSet<int>&,
+					       bool mappedtosource) const;
+    void			setHeaderVisible(OD::Orientation,bool yn);
+    bool			isHeaderVisible(OD::Orientation) const;
+
+    void			setRowsAndColsHidden(const TypeSet<int>& rows,
+						     const TypeSet<int>& cols,
+						     bool);
+    void			setRowsVisibility(const TypeSet<int>& showrows,
+						  const TypeSet<int>& hiderows);
+    void			setColumnsVisibility(
+						  const TypeSet<int>& showcols,
+						  const TypeSet<int>& hidecols);
+    void			enableUndo(bool yn);
+    bool			isUndoEnabled() const;
+    void			clearUndo();
+    void			markUndoBaseline();
+    void			beginUndoGroup();
+    void			endUndoGroup();
+    void			undo();
+    void			redo();
+
+    RowCol			mapFromSource(const RowCol&) const;
+				// source model to filter model
+    RowCol			mapToSource(const RowCol&) const;
+				// filter model to source model
+
+    void			setSelectionBehavior(SelectionBehavior);
+    SelectionBehavior		getSelectionBehavior() const;
+    void			setSelectionMode(SelectionMode);
+    SelectionMode		getSelectionMode() const;
+    void			clearSelection();
+    int				maxNrOfSelections() const;
+
+    bool			getSelectedRows(TypeSet<int>&,
+						bool mappedtosource) const;
+    bool			getSelectedColumns(TypeSet<int>&,
+						   bool mappedtosource) const;
+    bool			getSelectedCells(TypeSet<RowCol>&,
+						 bool mappedtosource) const;
+    void			selectAll();
+    void			setSelectedCells(const TypeSet<RowCol>&);
+    void			setSelectedCells(const TypeSet<RowCol>&,
+						 bool mapfromsource);
+    void			setCellSelected(const RowCol&,bool yn,
+						bool mapfromsource=true);
+    bool			isCellSelected(const RowCol&,
+					       bool mapfromsource=true) const;
+    void			selectColumn(int col);
+    void			selectRow(int row);
+    void			removeSelection(const TypeSet<RowCol>&);
+
+    void			setCurrentCell(const RowCol&,
+					       bool noselection=false);
+    const RowCol&		currentCell() const;
+
+    void			setColumnValueType(int col,
+						   TableModel::CellType,
+						   char format='g',
+						   int precision=6);
+    void			setColumnWidth(int col,int width );
+
+    TableModel::CellType	getCellType(int col) const;
+
+    Notifier<uiTableView>			leftClicked;
+    Notifier<uiTableView>			doubleClicked;
+    Notifier<uiTableView>			rightClicked;
+    Notifier<uiTableView>			selectionChanged;
+    Notifier<uiTableView>			undoRedoHappened;
+    CNotifier<uiTableView,int>			columnClicked;
+    CNotifier<uiTableView,int>			rowClicked;
+
+protected:
+
+    ODTableView&		mkView(uiParent*,const char*);
+    ODStyledItemDelegate*	getColumnDelegate(int col,TableModel::CellType,
+						  char format='g',
+						  int precision=6);
+    void			doHideRow(int row,bool,
+					  ODUndoCommand* parent);
+    void			doHideColumn(int col,bool,
+					  ODUndoCommand* parent);
+    void			editRequestCB(CallBacker*);
+
+    TableModel*			tablemodel_		= nullptr;
+    RowCol			notifcell_;
+
+    ODTableView*		odtableview_;
+    QSortFilterProxyModel*	qproxymodel_		= nullptr;
+    QByteArray*			horizontalheaderstate_	= nullptr;
+    bool			enableundo_		= true;
+    ODUndoCommand*		activeundogroup_	= nullptr;
+
+    ObjectSet<ODStyledItemDelegate>	columndelegates_;
+
+    virtual ODStyledItemDelegate* createColumnDelegate(int col,
+						       TableModel::CellType,
+						       char format='g',
+						       int precision=6);
+};

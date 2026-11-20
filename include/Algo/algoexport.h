@@ -1,0 +1,23 @@
+#pragma once
+/*+
+________________________________________________________________________
+
+ Copyright:	(C) 1995-2022 dGB Beheer B.V.
+ License:	https://dgbes.com/licensing
+________________________________________________________________________
+
+-*/
+
+# ifdef do_import_export
+
+#  include "mathfunc.h"
+
+mExportTemplClassInst(Algo) BendPointBasedMathFunction<float,float>;
+mExportTemplClassInst(Algo) BendPointBasedMathFunction<double,float>;
+mExportTemplClassInst(Algo) BendPointBasedMathFunction<float,double>;
+mExportTemplClassInst(Algo) BendPointBasedMathFunction<double,double>;
+
+mExportTemplClassInst(Algo) MathFunction<float,float>;
+
+
+# endif

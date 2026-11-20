@@ -1,0 +1,15 @@
+# OpendTect Environment Variable
+#
+# OpendTect reads environment variables from:
+# * Home_folder/.od/envvars
+# * OpendTect_Installation_Folder/data/EnvVars
+# * The OS's environment
+#
+# Exception: the variables used to reach Home_directory or the user
+#		settings directory are always taken from the OS-env.
+#
+# Format of this file is simple:
+# Environment_variable	Value
+# Example:
+# OD_NOSCENE_AT_STARTUP	1
+#

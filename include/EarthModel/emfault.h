@@ -1,0 +1,189 @@
+#pragma once
+/*+
+________________________________________________________________________
+
+ Copyright:	(C) 1995-2022 dGB Beheer B.V.
+ License:	https://dgbes.com/licensing
+________________________________________________________________________
+
+-*/
+
+#include "earthmodelmod.h"
+#include "emsurface.h"
+#include "emsurfacegeometry.h"
+#include "faultsticksurface.h"
+#include "undo.h"
+
+
+namespace EM
+{
+class Fault;
+class FaultStickSetGeometry;
+
+/*!
+\brief FaultGeometry base class.
+*/
+
+mExpClass(EarthModel) FaultGeometry : public SurfaceGeometry
+{
+public:
+			~FaultGeometry();
+
+			//!<Only works for FaultStickSurface
+			//! (Fault3DGeometry Element); Triggers change
+			//! notification.
+    FaultGeometry&	operator =(const FaultGeometry&);
+
+    virtual bool	insertStick(int sticknr,int firstcol,
+				    const Coord3& pos,const Coord3& editnormal,
+				    bool addtohistory)
+			{ return false; }
+    virtual bool	insertKnot(const SubID&,const Coord3& pos,
+				   bool addtohistory)
+			{ return false; }
+    virtual bool	removeStick(int sticknr,bool addtohistory)
+			{ return false; }
+    virtual bool	removeKnot(const SubID&,bool addtohistory)
+			{ return false; }
+
+    virtual const Coord3&	getEditPlaneNormal(int sticknr) const;
+    virtual const MultiID*	pickedMultiID(int stcknr) const
+							{ return nullptr; }
+    virtual const char*		pickedName(int sticknr) const
+							{ return nullptr; }
+
+    virtual void	copySelectedSticksTo(FaultStickSetGeometry& destfssg,
+					     bool addtohistory) const;
+
+    virtual int		nrSelectedSticks() const;
+    virtual void	selectAllSticks(bool select=true);
+    virtual void	removeSelectedSticks(bool addtohistory);
+
+    virtual void	selectStickDoubles(bool select=true,
+					   const FaultGeometry* ref=nullptr);
+    virtual void	removeSelectedDoubles(bool addtohistory,
+					      const FaultGeometry* ref=nullptr);
+    virtual int		nrStickDoubles(int sticknr,
+				       const FaultGeometry* ref=nullptr) const;
+    virtual TrcKeyZSampling	getEnvelope() const;
+
+protected:
+			FaultGeometry(Surface&);
+
+    void		selectSticks(bool select=true,
+				     const FaultGeometry* doublesref=0);
+    bool		removeSelStick(int selidx,bool addtohistory,
+				       const FaultGeometry* doublesref=0);
+    virtual void	setEnvelope(const TrcKeyZSampling&) {};
+
+public:
+// Deprecated public functions
+
+    mDeprecated("Use without SectionID")
+    virtual bool	insertStick(const SectionID&,int sticknr,int firstcol,
+				    const Coord3& pos,const Coord3& editnormal,
+				    bool addtohistory);
+
+    mDeprecated("Use without SectionID")
+    virtual bool	insertKnot(const SectionID&,const SubID& subid,
+				   const Coord3& pos,bool addtohistory);
+    mDeprecated("Use without SectionID")
+    virtual bool	removeStick(const SectionID&,int sticknr,
+				    bool addtohistory);
+    mDeprecated("Use without SectionID")
+    virtual bool	removeKnot(const SectionID&,const SubID& subid,
+				   bool addtohistory);
+
+    mDeprecated("Use without SectionID")
+    virtual const Coord3&	getEditPlaneNormal(const SectionID&,
+						   int sticknr) const;
+    mDeprecated("Use without SectionID")
+    virtual const MultiID*	pickedMultiID(const SectionID&,int stknr) const;
+    mDeprecated("Use without SectionID")
+    virtual const char*		pickedName(const SectionID&,int sticknr) const;
+
+    mDeprecated("Use without SectionID")
+    virtual void	copySelectedSticksTo(FaultStickSetGeometry& dest,
+					     const SectionID& sid,
+					     bool addtohistory) const;
+    mDeprecated("Use without SectionID")
+    virtual int		nrStickDoubles(const SectionID&,int sticknr,
+				       const FaultGeometry* ref=nullptr) const;
+};
+
+
+
+/*!
+\brief Fault Surface base class.
+*/
+
+mExpClass(EarthModel) Fault : public Surface
+{
+public:
+    virtual			~Fault();
+
+    void			removeAll() override;
+    FaultGeometry&		geometry() override			= 0;
+    const FaultGeometry&	geometry() const override
+				{ return const_cast<Fault*>(this)->geometry(); }
+
+protected:
+				Fault(EMManager&);
+
+    const IOObjContext&		getIOObjContext() const override	= 0;
+};
+
+
+/*!
+\brief Fault stick UndoEvent.
+*/
+
+mExpClass(EarthModel) FaultStickUndoEvent : public UndoEvent
+{
+public:
+			//Interface for insert
+			FaultStickUndoEvent(const EM::PosID&);
+			//Interface for removal
+			FaultStickUndoEvent(const EM::PosID&,
+					    const Coord3& oldpos,
+					    const Coord3& oldnormal );
+			~FaultStickUndoEvent();
+
+    const char*		getStandardDesc() const override;
+    bool		unDo() override;
+    bool		reDo() override;
+
+protected:
+    Coord3		pos_;
+    Coord3		normal_;
+    EM::PosID		posid_;
+    bool		remove_;
+};
+
+
+/*!
+\brief Fault knot UndoEvent.
+*/
+
+mExpClass(EarthModel) FaultKnotUndoEvent : public UndoEvent
+{
+public:
+			//Interface for insert
+			FaultKnotUndoEvent(const EM::PosID&);
+			//Interface for removal
+			FaultKnotUndoEvent(const EM::PosID&,
+					   const Coord3& oldpos);
+			~FaultKnotUndoEvent();
+
+    const char*		getStandardDesc() const override;
+    bool		unDo() override;
+    bool		reDo() override;
+
+protected:
+    Coord3		pos_;
+    Coord3		normal_;
+    EM::PosID		posid_;
+    bool		remove_;
+};
+
+} // namespace EM

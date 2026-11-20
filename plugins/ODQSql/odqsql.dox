@@ -1,0 +1,19 @@
+/*+
+________________________________________________________________________
+
+ (C) dGB Beheer B.V.; (LICENSE) http://opendtect.org/OpendTect_license.txt
+ Author:	Nanne Hemstra
+ Date:		September 2012
+ SVN:		$Id$
+________________________________________________________________________
+
+-*/
+
+
+/*!
+\defgroup ODQSql ODQSql
+\brief Implementation of the Qt SQL module
+
+\namespace SqlDB
+For classed dealing with Sql databases and requests
+*/

@@ -1,0 +1,363 @@
+/*+
+________________________________________________________________________
+
+ Copyright:	(C) 1995-2022 dGB Beheer B.V.
+ License:	https://dgbes.com/licensing
+________________________________________________________________________
+
+-*/
+
+#include "identifierman.h"
+
+#include "cmddriverbasics.h"
+#include "searchkey.h"
+
+#include "oddirs.h"
+#include "envvars.h"
+#include "file.h"
+#include "filepath.h"
+#include "typeset.h"
+
+namespace CmdDrive
+{
+
+static const char* getSpecDir( const char* envvar, const char* defdir )
+{
+    mDefineStaticLocalObject( BufferString, retdir, = GetEnvVar(envvar) );
+    if ( retdir.isEmpty() || !File::isDirectory(retdir) )
+    {
+	retdir = FilePath( GetDataDir(), defdir ).fullPath();
+	File::createDir( retdir );
+    }
+    return retdir.buf();
+}
+
+#define getExportDir() getSpecDir( "DTECT_EXPORT_DIR", "Export" )
+#define getImportDir() getSpecDir( "DTECT_IMPORT_DIR", "Import" )
+
+
+IdentifierManager::IdentifierManager()
+    : lastlinkedidentstr_("", ' ')
+{
+    reInit();
+}
+
+
+IdentifierManager::~IdentifierManager()
+{
+    while ( !identifiers_.isEmpty() )
+	raiseScopeLevel( false );
+}
+
+
+void IdentifierManager::raiseScopeLevel( bool up )
+{
+    if ( up )
+    {
+	identifiers_ += new ObjectSet<Identifier>;
+    }
+    else if ( !identifiers_.isEmpty() )
+    {
+	deepErase( *identifiers_[identifiers_.size()-1] );
+	delete identifiers_.removeSingle( identifiers_.size()-1 );
+	curident_ = 0;
+	curlevel_ = -1;
+    }
+}
+
+
+#define mPreset( name, val ) \
+{ set(name,val); curident_->predefined_ = true; }
+
+void IdentifierManager::reInit()
+{
+    while ( !identifiers_.isEmpty() )
+	raiseScopeLevel( false );
+
+    raiseScopeLevel( true );
+
+    mPreset( "FALSE", false );
+    mPreset( "TRUE", true );
+    mPreset( "PI", M_PI );
+    mPreset( "UNDEF", mUdf(double) );
+
+    mPreset( "FAILURE", 0 );
+    mPreset( "SUCCESS", 1 );
+    mPreset( "WARNING", -1 );
+
+    mPreset( "OFF", 0 );
+    mPreset( "ON", 1 );
+    mPreset( "UNSWITCHABLE", -1 );
+
+    setFilePathPlaceholder( "FILEIDX", "1000" );
+
+    lastlinkedidentstr_.setEmpty();
+
+    curident_ = 0;
+    curlevel_ = -1;
+}
+
+
+bool IdentifierManager::findCurIdent( const char* name, bool followlinks,
+				      bool singlescope )
+{
+    lastlinkedidentstr_ = name;
+
+    curlevel_ = identifiers_.size() - 1;
+
+    while ( true )
+    {
+	mUnscope( name, unscopedname );
+	if ( name != unscopedname )
+	    curlevel_ = 0;
+
+	curident_ = nullptr;
+	for ( int idx=0; idx<identifiers_[curlevel_]->size(); idx++ )
+	{
+	    curident_ = (*identifiers_[curlevel_])[idx];
+	    if ( !curident_ )
+		continue;
+
+	    if ( SearchKey(unscopedname,false).isMatching(curident_->name_) )
+	    {
+		identifiers_[curlevel_]->insertAt( curident_, 0 );
+		identifiers_[curlevel_]->removeSingle( idx+1 );
+
+		if ( !followlinks || !curident_->islink_ )
+		    return true;
+
+		name = curident_->val_.buf();
+
+		lastlinkedidentstr_ += "->";
+		lastlinkedidentstr_ += name;
+		break;
+	    }
+
+	    curident_ = nullptr;
+	}
+
+	if ( curlevel_==0 || (singlescope && !curident_) )
+	    break;
+
+	const bool isprocdef = FileMultiString(name).size() > 1;
+	curlevel_ = curident_ || isprocdef ? curlevel_-1 : 0;
+    }
+
+    return false;
+}
+
+
+void IdentifierManager::set( const char* name, const char* val, bool islink )
+{
+    if ( findCurIdent(name, !islink, true) )
+    {
+	curident_->val_ = val;
+	curident_->predefined_ = false;
+	curident_->refresh_ = false;
+	curident_->islink_ = islink;
+    }
+    else
+    {
+	name = lastlinkedidentstr_[lastlinkedidentstr_.size()-1];
+	mUnscope( name, unscopedname );
+	curident_ = new Identifier( unscopedname, val, islink );
+	identifiers_[curlevel_]->insertAt( curident_, 0 );
+    }
+}
+
+
+void IdentifierManager::set( const char* name, int val )
+{ set( name, toString(val) ); }
+
+
+void IdentifierManager::set( const char* name, double val )
+{ set( name, toString(val) ); }
+
+
+void IdentifierManager::unset( const char* name, bool followlinks )
+{
+    if ( findCurIdent(name, followlinks) )
+    {
+	delete identifiers_[curlevel_]->removeSingle( 0 );
+	curident_ = 0;
+    }
+}
+
+
+bool IdentifierManager::updatePlaceholder( const char* name,
+				const char* key, const char* value ) const
+{
+    IdentifierManager* idm = const_cast<IdentifierManager*>( this );
+    const char* str1 = key;
+    const char* str2 = key;
+    if ( mMatchCI(name,str1) || mMatchCI(name,++str2) )
+    {
+	BufferString filepath( value );
+	mDressUserInputString( filepath, sInputStr );
+	idm->setFilePathPlaceholder( key, filepath );
+	return true;
+    }
+
+    return false;
+}
+
+
+bool IdentifierManager::doesExist( const char* name ) const
+{
+    IdentifierManager* idm = const_cast<IdentifierManager*>( this );
+    const bool isdef = idm->findCurIdent( name );
+
+    if ( isdef && !curident_->refresh_ )
+	return true;
+
+    bool res = updatePlaceholder( name, "@BASEDIR", GetBaseDataDir() );
+    if ( !res )
+	res =  updatePlaceholder( name, "@DATADIR", GetDataDir() );
+    if ( !res )
+	res =  updatePlaceholder( name, "@PROCDIR", GetProcFileName(0) );
+    if ( !res )
+	res = updatePlaceholder( name, "@APPLDIR", GetSoftwareDir(0) );
+    if ( !res )
+	res =  updatePlaceholder( name, "@USERDIR", GetPersonalDir() );
+    if ( !res )
+	res =  updatePlaceholder( name, "@SCRIPTSDIR", GetScriptsDir() );
+    if ( !res )
+	res =  updatePlaceholder( name, "@SNAPSHOTSDIR",
+				  GetScriptsPicturesDir() );
+    if ( !res )
+	res =  updatePlaceholder( name, "@IMPORTDIR", getImportDir() );
+    if ( !res )
+	res =  updatePlaceholder( name, "@EXPORTDIR", getExportDir() );
+
+    return res ? res : isdef;
+}
+
+
+const char* IdentifierManager::getValue( const char* name ) const
+{ return doesExist(name) ? curident_->val_.buf() : 0; }
+
+
+bool IdentifierManager::getInteger( const char* name, int& val ) const
+{ return StringProcessor(getValue(name)).convertToInt( &val ); }
+
+
+bool IdentifierManager::getDouble( const char* name, double& val ) const
+{ return StringProcessor(getValue(name)).convertToDouble( &val ); }
+
+
+int IdentifierManager::substitute( const char* src, BufferString& dest )
+{
+    const char* ptr = src;
+    dest.setEmpty();
+    int nrfailed = 0;
+    int nrsuccessful = 0;
+
+    TypeSet<int> filepathpositions;
+
+    while ( *ptr )
+    {
+	if ( *ptr=='$' && !StringProcessor(src).isEscapedSymbol(ptr) )
+	{
+	    BufferString name;
+	    if ( StringProcessor(ptr).parseBracketed(name, '$', '$') )
+	    {
+		if ( mMatchCI(name, "FILEIDX") )
+		{
+		    int fileidx;
+		    if ( getInteger(name, fileidx) && curlevel_==0 )
+			set( name, fileidx+1 );
+		}
+
+		const char* val = getValue( name );
+		if ( val )
+		{
+		    if ( curident_->filepathplaceholder_ )
+			filepathpositions += dest.size();
+
+		    dest += val;
+		    nrsuccessful++;
+		}
+		else
+		{
+		    dest += "$"; dest += name; dest += "$";
+		    nrfailed++;
+		}
+		ptr += name.size() + 2;
+	    }
+	    else
+	    {
+		mAddCharToBufStr( dest, *ptr++ );
+		nrfailed++;
+	    }
+	}
+	else
+	    mAddCharToBufStr( dest, *ptr++ );
+    }
+
+    for ( int idx=0; idx<filepathpositions.size(); idx++ )
+	StringProcessor(dest).makeDirSepIndep( filepathpositions[idx] );
+
+    return nrfailed ? -nrfailed : nrsuccessful;
+}
+
+
+bool IdentifierManager::tryFilePathPlaceholders( BufferString& filepath )
+{
+    BufferString dest;
+
+    tryFilePathPlaceholder( "$USERDIR$",      filepath, dest );
+    tryFilePathPlaceholder( "$APPLDIR$",      filepath, dest );
+    tryFilePathPlaceholder( "$BASEDIR$",      filepath, dest );
+    tryFilePathPlaceholder( "$DATADIR$",      filepath, dest );
+    tryFilePathPlaceholder( "$PROCDIR$",      filepath, dest );
+    tryFilePathPlaceholder( "$IMPORTDIR$",    filepath, dest );
+    tryFilePathPlaceholder( "$EXPORTDIR$",    filepath, dest );
+    tryFilePathPlaceholder( "$SNAPSHOTSDIR$", filepath, dest );
+
+    if ( dest.isEmpty() )
+	return false;
+
+    filepath = dest;
+    return true;
+}
+
+
+void IdentifierManager::tryFilePathPlaceholder( const char* prefixsrc,
+						const char* filepathsrc,
+						BufferString& filepathdest )
+{
+    BufferString whitespace;
+    while ( iswspace(*filepathsrc) )
+	 whitespace += *filepathsrc++;
+
+    BufferString prefixdest;
+    if ( substitute(prefixsrc,prefixdest)!=1 || prefixdest.isEmpty() )
+	return;
+
+    if ( !stringStartsWith(prefixdest.buf(),filepathsrc) )
+	return;
+
+    filepathdest = whitespace;
+    filepathdest += prefixsrc;
+    filepathdest += filepathsrc + prefixdest.size();
+}
+
+
+void IdentifierManager::setFilePathPlaceholder( const char* name,
+						const char* val )
+{
+    mPreset( name, val );
+    curident_->filepathplaceholder_ = true;
+    curident_->refresh_ = true;
+}
+
+
+bool IdentifierManager::isPredefined( const char* name ) const
+{ return doesExist(name) ? curident_->predefined_ : false; }
+
+
+const char* IdentifierManager::lastLinkedIdentStr() const
+{ return lastlinkedidentstr_.unescapedStr(); }
+
+
+} // namespace CmdDrive

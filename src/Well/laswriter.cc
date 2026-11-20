@@ -1,0 +1,249 @@
+/*+
+________________________________________________________________________
+
+ Copyright:	(C) 1995-2022 dGB Beheer B.V.
+ License:	https://dgbes.com/licensing
+________________________________________________________________________
+
+-*/
+
+#include "laswriter.h"
+
+#include "dateinfo.h"
+#include "od_ostream.h"
+#include "string2.h"
+#include "welldata.h"
+#include "welllog.h"
+#include "welllogset.h"
+#include "welltrack.h"
+
+static const int cNrMDDecimals = 4;
+static const int cNrXYDecimals = 3;
+static const int cNrValDecimals = 4;
+
+LASWriter::LASWriter( const Well::Data& wd, const BufferStringSet& lognms,
+		      const char* lasfnm )
+    : Executor("")
+    , wd_(&wd)
+    , logs_(*new Well::LogSet)
+    , lasfnm_(lasfnm)
+{
+    nullvalue_ = "-999.2500";
+
+    for ( int idx=0; idx<lognms.size(); idx++ )
+    {
+	const Well::Log* log = wd_->logs().getLog( lognms.get(idx).buf() );
+	if ( !log )
+	    continue;
+
+	logs_.add( new Well::Log(*log) );
+    }
+
+    mdrg_.set( logs_.dahInterval(), 0.1524f );
+}
+
+
+LASWriter::~LASWriter()
+{
+    delete &logs_;
+}
+
+
+void LASWriter::setMDRange( const StepInterval<float>& rg )
+{
+    mdrg_ = rg;
+}
+
+
+void LASWriter::setNullValue( const char* nv )
+{
+    nullvalue_ = nv;
+}
+
+
+void LASWriter::setColumnWidth( int w )
+{
+    columnwidth_ = mMAX( minimumColumnWidth(), w );
+}
+
+
+bool LASWriter::doPrepare( od_ostream* )
+{
+    return !logs_.isEmpty() && !mdrg_.isUdf();
+}
+
+
+int LASWriter::nextStep()
+{
+    od_ostream strm( lasfnm_.buf() );
+    if ( !strm.isOK() )
+	return ErrorOccurred();
+
+    writeVersionInfoSection( strm );
+    writeWellInfoSection( strm );
+    writeCurveInfoSection( strm );
+    writeParameterInfoSection( strm );
+    writeOtherSection( strm );
+    writeLogData( strm );
+    strm << od_newline;
+    nrdone_++;
+    return Finished();
+}
+
+
+bool LASWriter::writeVersionInfoSection( od_ostream& strm )
+{
+    strm << "~Version Information Section" << od_newline;
+    strm << "VERS.              2.0  : CWLS LOG ASCII STANDARD - VERSION 2.0\n";
+    strm << "WRAP.              NO   : ONE LINE PER DEPTH STEP" << od_newline;
+
+    BufferString datestr;
+    DateInfo di;
+    di.toString( datestr );
+    strm << "CREA.              " << datestr.buf() << od_newline;
+    strm << "#" << od_newline;
+    return true;
+}
+
+
+static const int cValStart = 20;
+static const int cDescStart = 40;
+
+static BufferString create( const char* mnem, const char* unit, const char* val,
+			    const char* desc, bool newline=true )
+{
+    BufferString str( mnem, ".", unit );
+    int sz = str.size();
+    str.addSpace( cValStart-sz-1 );
+    str.add( val );
+    sz = str.size();
+    str.addSpace( cDescStart-sz-1 );
+    str.add( ": " ).add( desc );
+    if ( newline )
+	str.addNewLine();
+    return str;
+}
+
+
+bool LASWriter::writeWellInfoSection( od_ostream& strm )
+{
+    BufferString zstart, zstop, zstep, xcoord, ycoord;
+    zstart.set( mdrg_.start_, 0, 'f', cNrMDDecimals );
+    zstop.set( mdrg_.stop_, 0, 'f', cNrMDDecimals );
+    zstep.set( mdrg_.step_, 0, 'f', cNrMDDecimals );
+    xcoord.set( wd_->info().surfacecoord_.x_, 0, 'f', cNrXYDecimals );
+    ycoord.set( wd_->info().surfacecoord_.y_, 0, 'f', cNrXYDecimals );
+    const char* depthunit = zinfeet_ ? "F" : "M";
+    const char* xyunit = SI().xyInFeet() ? "F" : "M";
+
+    strm << "~Well Information Section" << od_newline;
+    strm << "#MNEM.UNIT         VALUE/NAME          DESCRIPTION" << od_newline;
+    strm << "#_________         __________          ___________" << od_newline;
+    strm << create( "STRT", depthunit, zstart, "START DEPTH" ).buf();
+    strm << create( "STOP", depthunit, zstop, "STOP DEPTH" ).buf();
+    strm << create( "STEP", depthunit, zstep, "STEP" ).buf();
+    strm << create( "NULL", "", "-999.2500", "NULL VALUE" ).buf();
+    strm << create( "COMP", "", "", "COMPANY" ).buf();
+    strm << create( "WELL", "", wd_->name(), "WELL NAME" ).buf();
+    strm << create( "FLD", "", wd_->info().field_, "FIELD" ).buf();
+    strm << create( "LOC", "", "", "LOCATION" ).buf();
+    strm << create( "PROV", "", wd_->info().province_, "PROVINCE" ).buf();
+    strm << create( "CNTY", "", wd_->info().county_, "COUNTY" ).buf();
+    strm << create( "STAT", "", wd_->info().state_, "STATE" ).buf();
+    strm << create( "CTRY", "", wd_->info().country_, "COUNTRY" ).buf();
+    strm << create( "SRVC", "", wd_->info().oper_, "SERVICE COMPANY" ).buf();
+    strm << create( "DATE", "", "", "LOG DATE" ).buf();
+    strm << create( "UWI", "", wd_->info().uwid_, "UNIQUE WELL ID" ).buf();
+    strm << create( "XCOORD", xyunit, xcoord, "SURFACE X" ).buf();
+    strm << create( "YCOORD", xyunit, ycoord, "SURFACE Y" ).buf();
+    strm << "#" << od_newline;
+    return true;
+}
+
+
+bool LASWriter::writeCurveInfoSection( od_ostream& strm )
+{
+    const char* depthunit = zinfeet_ ? "F" : "M";
+
+    strm << "~Curve Information Section" << od_newline;
+    strm << "#MNEM.UNIT         API CODE            DESCRIPTION" << od_newline;
+    strm << "#_________         ________            ___________" << od_newline;
+    strm << create( "DEPT", depthunit, "", "0 Depth" );
+    for ( int idx=0; idx<logs_.size(); idx++ )
+    {
+	const Well::Log& log = logs_.getLogByIdx( idx );
+	BufferString uomstr = log.unitMeasLabel();
+	uomstr.remove( ' ' );
+	if ( writelognm_ )
+	    strm << create( log.name(), uomstr, "",
+			BufferString(toString(idx+1)," ",log.mnemonicLabel()) );
+	else
+	    strm << create( log.mnemonicLabel(), uomstr, "",
+			BufferString(toString(idx+1)," ",log.name()) );
+    }
+
+    strm << "#" << od_newline;
+    return true;
+}
+
+
+bool LASWriter::writeParameterInfoSection( od_ostream& strm )
+{
+// optional
+    BufferString kbstr, glstr;
+    kbstr.set( wd_->track().getKbElev(), 0, 'f', cNrMDDecimals );
+    if ( mIsUdf(wd_->info().groundelev_) )
+	glstr.set( nullvalue_ );
+    else
+	glstr.set( wd_->info().groundelev_, 0, 'f', cNrMDDecimals );
+
+    const char* depthunit = zinfeet_ ? "F" : "M";
+    strm << "~Parameter Information Section" << od_newline;
+    strm << "#MNEM.UNIT           VALUE             DESCRIPTION" << od_newline;
+    strm << "#_________         __________          ___________" << od_newline;
+    strm << create( "EKB", depthunit, kbstr, "Elevation Kelly Bushing" ).buf();
+    strm << create( "EGL", depthunit, glstr, "Elevation Ground Level" ).buf();
+    strm << "#" << od_newline;
+    return true;
+}
+
+
+bool LASWriter::writeOtherSection( od_ostream& strm )
+{
+// optional
+    strm << "~Other Information Section" << od_newline;
+    strm << "#" << od_newline;
+    return true;
+}
+
+
+bool LASWriter::writeLogData( od_ostream& strm )
+{
+    BufferString word( columnwidth_+1, false );
+    const int nrz = mdrg_.nrSteps() + 1;
+
+    const auto* mdunit = UnitOfMeasure::getGuessed( zinfeet_ ? "ft" : "m" );
+    const UnitOfMeasure* storunit = Well::Man::surveyDepthStorageUnit();
+
+    strm << "~Ascii Data Section" << od_newline;
+    for ( int idz=0; idz<nrz; idz++ )
+    {
+	float md = mdrg_.atIndex( idz );
+	word.set( md, 12, 'f', cNrMDDecimals );
+	strm << word << od_space;
+
+	md = getConvertedValue( md, mdunit, storunit );
+	for ( int idx=0; idx<logs_.size(); idx++ )
+	{
+	    float val = logs_.getLogByIdx(idx).getValue( md );
+	    if ( mIsUdf(val) )
+		val = toFloat( nullvalue_ );
+
+	    word.set( val, columnwidth_, 'f', cNrValDecimals );
+	    strm << word << od_space;
+	}
+	strm << od_newline;
+    }
+
+    return true;
+}

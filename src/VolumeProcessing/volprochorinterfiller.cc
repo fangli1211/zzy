@@ -1,0 +1,347 @@
+/*+
+________________________________________________________________________
+
+ Copyright:	(C) 1995-2022 dGB Beheer B.V.
+ License:	https://dgbes.com/licensing
+________________________________________________________________________
+
+-*/
+
+#include "volprochorinterfiller.h"
+
+#include "arrayndimpl.h"
+#include "emhorizon2d.h"
+#include "emmanager.h"
+#include "mousecursor.h"
+#include "multiid.h"
+#include "seisdatapack.h"
+#include "survinfo.h"
+
+namespace VolProc
+{
+
+HorInterFiller::HorInterFiller()
+    : topvalue_( mUdf(float) )
+    , bottomvalue_( mUdf(float) )
+    , gradient_( mUdf(float) )
+    , usegradient_( true )
+{}
+
+
+HorInterFiller::~HorInterFiller()
+{
+    releaseData();
+}
+
+
+void HorInterFiller::releaseData()
+{
+    Step::releaseData();
+    tophorizon_ = nullptr;
+    bottomhorizon_ = nullptr;
+}
+
+
+bool HorInterFiller::setTopHorizon( const MultiID* tmid )
+{
+    if ( !tmid )
+    {
+	tophorizon_ = nullptr;
+	return true;
+    }
+
+    RefMan<EM::Horizon> newhor = tmid ? loadHorizon( *tmid ) : 0;
+    if ( !newhor )
+	return false;
+
+    tophorizon_ = newhor;
+    return true;
+}
+
+
+const MultiID* HorInterFiller::getTopHorizonID() const
+{
+    return tophorizon_ ? &tophorizon_->multiID() : 0;
+}
+
+
+float HorInterFiller::getTopValue() const
+{
+    return topvalue_;
+}
+
+
+const MultiID* HorInterFiller::getBottomHorizonID() const
+{
+    return bottomhorizon_ ? &bottomhorizon_->multiID() : 0;
+}
+
+
+float HorInterFiller::getBottomValue() const
+{
+    return bottomvalue_;
+}
+
+
+void HorInterFiller::setBottomValue( float bv )
+{
+    bottomvalue_ = bv;
+}
+
+
+void HorInterFiller::setTopValue( float tv )
+{
+    topvalue_ = tv;
+}
+
+
+bool HorInterFiller::usesGradient() const
+{
+    return usegradient_;
+}
+
+
+void HorInterFiller::useGradient( bool yn )
+{
+    usegradient_ = yn;
+}
+
+
+float HorInterFiller::getGradient() const
+{
+    return gradient_;
+}
+
+
+void HorInterFiller::setGradient( float g )
+{
+    gradient_ = g;
+}
+
+
+bool HorInterFiller::setBottomHorizon( const MultiID* bmid )
+{
+    if ( !bmid )
+    {
+	bottomhorizon_ = nullptr;
+	return true;
+    }
+
+    RefMan<EM::Horizon> newhor = bmid ? loadHorizon( *bmid ) : 0;
+    if ( !newhor )
+	return false;
+
+    bottomhorizon_ = newhor;
+    return true;
+}
+
+
+EM::Horizon* HorInterFiller::loadHorizon( const MultiID& mid ) const
+{
+    RefMan<EM::EMObject> emobj = EM::EMM().loadIfNotFullyLoaded( mid );
+    mDynamicCastGet( EM::Horizon*, newhor, emobj.ptr() );
+    if ( !newhor )
+	return nullptr;
+
+    emobj.setNoDelete( true );
+    return newhor;
+}
+
+
+bool HorInterFiller::computeBinID( const BinID& bid, int )
+{
+    RegularSeisDataPack* output = getOutput( getOutputSlotID(0) );
+    if ( !output || output->isEmpty() || !isOK() )
+	return false;
+
+    const TrcKeySampling& hs = output->sampling().hsamp_;
+    const StepInterval<int> outputinlrg( hs.inlRange() );
+
+    if ( !outputinlrg.includes( bid.inl(), false ) ||
+         (bid.inl()-outputinlrg.start_)%outputinlrg.step_ )
+	return false;
+
+    const StepInterval<int> outputcrlrg( hs.crlRange() );
+
+    if ( !outputcrlrg.includes( bid.crl(), false ) ||
+         (bid.crl()-outputcrlrg.start_)%outputcrlrg.step_ )
+	return false;
+
+    //TODO: Rework EM::Horizon2D to avoid the manipulation below.
+    EM::SubID topsubid = bid.toInt64(), botsubid = bid.toInt64();
+    mDynamicCastGet(const EM::Horizon2D*,tophor2d,tophorizon_.ptr())
+    mDynamicCastGet(const EM::Horizon2D*,bothor2d,bottomhorizon_.ptr())
+    if ( tophor2d )
+    {
+	const int lineidx =
+		tophor2d->geometry().lineIndex( Pos::GeomID(bid.inl()) );
+	topsubid = BinID( lineidx, bid.crl() ).toInt64();
+    }
+
+    if ( bothor2d )
+    {
+	const int lineidx =
+		bothor2d->geometry().lineIndex( Pos::GeomID(bid.inl()) );
+	botsubid = BinID( lineidx, bid.crl() ).toInt64();
+    }
+
+    const double topdepth = tophorizon_
+			    ? tophorizon_->getPos( topsubid ).z_
+			    : SI().zRange(true).start_;
+
+    const double bottomdepth = bottomhorizon_
+			       ? bottomhorizon_->getPos( botsubid ).z_
+			       : SI().zRange(true).stop_;
+
+    const SamplingData<double>
+	zsampling( output->sampling().zsamp_ );
+
+    const int topsample = mIsUdf(topdepth)
+	? mUdf(int)
+	: zsampling.nearestIndex( topdepth );
+
+    const int bottomsample = mIsUdf(bottomdepth)
+	? mUdf(int)
+	: zsampling.nearestIndex( bottomdepth );
+
+    SamplingData<double> cursampling;
+    if ( usegradient_ )
+        cursampling.step_ = gradient_ * output->sampling().zsamp_.step_;
+    else if ( topsample==bottomsample )
+        cursampling.step_ = 0;
+    else
+        cursampling.step_ = (topvalue_-bottomvalue_)/(topsample-bottomsample);
+
+    cursampling.start_ = topvalue_-topsample*cursampling.step_;
+
+    const RegularSeisDataPack* input = getInput( getInputSlotID(0) );
+    const Array3D<float>* inputarr = input && input->nrComponents()
+	? &input->data( 0 ) : 0;
+
+    StepInterval<int> inputinlrg;
+    if ( inputarr )
+    {
+	inputinlrg = input->sampling().hsamp_.inlRange();
+	if ( !inputinlrg.includes( bid.inl(), false ) ||
+             (bid.inl()-inputinlrg.start_)%inputinlrg.step_ )
+	    inputarr = 0;
+    }
+
+    StepInterval<int> inputcrlrg;
+    if ( inputarr )
+    {
+	inputcrlrg = input->sampling().hsamp_.crlRange();
+	if ( !inputcrlrg.includes( bid.crl(), false ) ||
+             (bid.crl()-inputcrlrg.start_)%inputcrlrg.step_ )
+	    inputarr = 0;
+    }
+
+    const int inputinlidx = inputinlrg.nearestIndex( bid.inl() );
+    const int inputcrlidx = inputcrlrg.nearestIndex( bid.crl() );
+    const int outputinlidx = outputinlrg.nearestIndex( bid.inl() );
+    const int outputcrlidx = outputcrlrg.nearestIndex( bid.crl() );
+
+    Array3D<float>& outputarray = output->data(0);
+    for ( int idx=outputarray.info().getSize(2)-1; idx>=0; idx-- )
+    {
+	bool dobg = false;
+	if ( mIsUdf(topsample) && mIsUdf(bottomsample) )
+	    dobg = true;
+	else if ( !mIsUdf(topsample) && !mIsUdf(bottomsample) )
+	{
+	    const Interval<int> rg(topsample,bottomsample);
+	    dobg = !rg.includes( idx, false );
+	}
+	else if ( tophorizon_ && bottomhorizon_ )
+	    dobg = true;
+	else if ( !mIsUdf(topsample) )
+	    dobg = idx<topsample;
+	else
+	    dobg = true;
+
+	float value;
+	if ( dobg )
+	{
+	    value = inputarr ? inputarr->get(inputinlidx,inputcrlidx,idx)
+			     : mUdf( float );
+	}
+	else
+	{
+	    const int cursample = idx;
+	    value = (float) cursampling.atIndex( cursample );
+	}
+
+        outputarray.set( outputinlidx, outputcrlidx, idx, value );
+    }
+
+    return true;
+}
+
+
+void HorInterFiller::fillPar( IOPar& pars ) const
+{
+    Step::fillPar( pars );
+
+    if ( tophorizon_ ) pars.set( sKeyTopHorID(), tophorizon_->multiID() );
+    if ( bottomhorizon_ ) pars.set( sKeyBotHorID(), bottomhorizon_->multiID() );
+
+    pars.set( sKeyTopValue(), topvalue_ );
+    pars.set( sKeyBotValue(), bottomvalue_ );
+    pars.set( sKeyGradient(), gradient_ );
+    pars.setYN( sKeyUseGradient(), usegradient_ );
+}
+
+
+bool HorInterFiller::usePar( const IOPar& pars )
+{
+    if ( !Step::usePar( pars ) )
+	return false;
+
+    MouseCursorChanger cursorlock( MouseCursor::Wait );
+
+    topvalue_ = mUdf(float);
+    bottomvalue_ = mUdf(float);
+    gradient_ = mUdf(float);
+    usegradient_ = false;
+
+    pars.getYN( sKeyUseGradient(), usegradient_ );
+    pars.get( sKeyGradient(), gradient_ );
+    pars.get( sKeyBotValue(), bottomvalue_ );
+    pars.get( sKeyTopValue(), topvalue_ );
+
+    MultiID tophorid;
+    if ( pars.get( sKeyTopHorID(), tophorid) && !setTopHorizon( &tophorid ) )
+	return false;
+
+    MultiID bottomhorid;
+    if ( pars.get( sKeyBotHorID(), bottomhorid ) &&
+	 !setBottomHorizon( &bottomhorid ) )
+	return false;
+
+    return isOK();
+}
+
+
+bool HorInterFiller::isOK() const
+{
+    if ( mIsUdf(topvalue_) )
+	return false;
+
+    if ( usegradient_ && mIsUdf(gradient_) )
+	return false;
+
+    if ( !usegradient_ && mIsUdf(bottomvalue_) )
+	return false;
+
+    return true;
+}
+
+
+od_int64 HorInterFiller::extraMemoryUsage( OutputSlotID,
+	const TrcKeySampling&, const StepInterval<int>& ) const
+{
+    return 0;
+}
+
+
+} // namespace VolProc

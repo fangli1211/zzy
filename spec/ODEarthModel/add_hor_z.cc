@@ -1,0 +1,96 @@
+/*+
+________________________________________________________________________
+
+ Copyright:	(C) 1995-2022 dGB Beheer B.V.
+ License:	https://dgbes.com/licensing
+________________________________________________________________________
+
+-*/
+
+#include "emsurfacegeometry.h"
+#include "emhorizon.h"
+#include "emmanager.h"
+#include "prog.h"
+#include "position.h"
+#include "ioman.h"
+#include "ioobj.h"
+#include "strmprov.h"
+#include "sets.h"
+#include "bufstring.h"
+#include "ptrman.h"
+#include "survinfo.h"
+#include "executor.h"
+#include "od_ostream.h"
+#include "keystrs.h"
+#include <iostream>
+
+static int prUsage( const char* msg = 0 )
+{
+    std::cerr << "Usage: Horizon_ID input_XY_file output_XYZ_file [--incudf]";
+    if ( msg ) std::cerr << '\n' << msg;
+    std::cerr << std::endl;
+    return 1;
+}
+
+int mProgMainFnName( int argc, char** argv )
+{
+    if ( argc < 4 )
+	return prUsage();
+
+    bool incudf = argc > 4 && strcmp(argv[4],"--incudf");
+
+    MultiID ioobjkey;
+    ioobjkey.fromString( argv[1] );
+
+    PrtMan<IOObj> ioobj = IOM().get( ioobjkey );
+    if ( !ioobj )
+	return prUsage( "Horizon_ID not OK" );
+
+    EM::EMManager& em = EM::EMM();
+    PtrMan<Task> exec = em.objectLoader( ioobjkey );
+    if ( exec )
+    {
+	TextTaskRunner runner( od_cerr() );
+	runner.execute( *exec );
+    }
+
+    EM::EMObject* emobj = em.getObject( em.getObjectID(ioobjkey) );
+    mDynamicCastGet(EM::Horizon*,horizon,emobj)
+    if ( !horizon ) return prUsage( "ID is not horizon" );
+
+    StreamData sd = StreamProvider::createIStream( argv[2] );
+    if ( !sd.usable() ) return prUsage( "input_XY_file not OK" );
+
+    Coord c0;
+    TypeSet<Coord> coords;
+    while ( sd.istrm->good() )
+    {
+	Coord c;
+	*sd.istrm >> c.x >> c.y;
+	double sqdist = c.sqDistTo( c0 );
+	if ( mIsZero(sqdist,1e-4) )
+	    break;
+	coords += c;
+    }
+    sd.close();
+    if ( coords.size() < 1 ) return prUsage( "No valid coordinates found" );
+
+    sd = StreamProvider::createOStream( argv[3] );
+    if ( !sd.usable() ) return prUsage( "output_XYZ_file not OK" );
+
+    for ( int idx=0; idx<coords.size(); idx++ )
+    {
+	Coord c( coords[idx] );
+	const BinID bid = SI().transform( c );
+	const EM::SectionID sid = horizon->sectionID( 0 );
+	const float zpos = horizon->getPos( sid, bid.getSerialized() ).z;
+	if ( mIsUdf(zpos) && !incudf ) continue;
+
+	BufferString str;
+	str += c.x; str += "\t"; str += c.y; str += "\t";
+	str += mIsUdf(zpos) ? BufferString(sKey::FloatUdf) : BufferString(zpos);
+	*sd.ostrm << str << std::endl;
+    }
+
+    return 0;
+}

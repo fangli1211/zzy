@@ -1,0 +1,184 @@
+/*+
+________________________________________________________________________
+
+ Copyright:	(C) 1995-2022 dGB Beheer B.V.
+ License:	https://dgbes.com/licensing
+________________________________________________________________________
+
+-*/
+
+#include "oddlsite.h"
+#include "odnetworkaccess.h"
+#include "databuf.h"
+#include "file.h"
+#include "filepath.h"
+#include "od_istream.h"
+#include "settings.h"
+#include "uistrings.h"
+
+static const char* sKeyTimeOut = "Download.Timout";
+
+ODDLSite::ODDLSite( const char* h, float t )
+    : timeout_(t)
+    , host_(h)
+{
+    islocal_ = host_.startsWith( "DIR=" );
+    if ( host_.isEmpty() )
+	host_ = "opendtect.org";
+
+    int stroffs = 0;
+    if ( islocal_ )
+	stroffs = 4;
+    else if ( host_.startsWith("http://") )
+	{ stroffs = 7; issecure_ = false; }
+    else if ( host_.startsWith("https://") )
+	{ stroffs = 8; issecure_ = true; }
+
+    host_ = h + stroffs;
+
+    // TODO handle timeout
+    if ( timeout_ <= 0 )
+    {
+	Settings::common().get( sKeyTimeOut, timeout_ );
+	if ( timeout_ <= 0 )
+	    timeout_ = 5; // internet is quick these days
+    }
+
+    if ( host_.isEmpty() )
+	host_ = "opendtect.org";
+}
+
+
+ODDLSite::~ODDLSite()
+{
+    delete databuf_;
+}
+
+
+void ODDLSite::setTimeOut( float t, bool sett )
+{
+    timeout_ = t;
+    if ( sett )
+    {
+	Settings::common().set( sKeyTimeOut, timeout_ );
+	Settings::common().write();
+    }
+}
+
+
+bool ODDLSite::getFile( const char* relfnm, const char* outfnm,
+			TaskRunner* taskrun, const char* nicename )
+{
+    deleteAndNullPtr( databuf_ );
+    if ( islocal_ )
+	return getLocalFile( relfnm, outfnm );
+
+    if ( !outfnm )
+    {
+	BufferString str;
+	if ( !Network::getContent(fullURL(relfnm),str,&errmsg_,taskrun) )
+	    return false;
+
+	delete databuf_;
+	databuf_ = new DataBuffer( str.size(), 1 );
+	if ( !databuf_->isOk() )
+	    return false;
+
+	if ( !str.isEmpty() )
+	    OD::memCopy( (char*)databuf_->data(), str.str(), databuf_->size() );
+
+	return true;
+    }
+
+    const uiRetVal uirv =
+		Network::downloadFile( fullURL(relfnm), outfnm, taskrun );
+    if ( uirv.isError() )
+	errmsg_ = uirv.messages().cat();
+
+    return uirv.isOK();
+}
+
+
+bool ODDLSite::getLocalFile( const char* relfnm, const char* outfnm )
+{
+    const BufferString inpfnm( getFileName(relfnm) );
+
+    if ( outfnm && *outfnm )
+	return File::copy( inpfnm, outfnm );
+
+    BufferString bs;
+    if ( !File::getContent(inpfnm, bs) )
+	return false;
+
+    delete databuf_;
+    databuf_ = new DataBuffer( bs.size(), 1 );
+    if ( databuf_->isOk() && !bs.isEmpty() )
+	OD::memCopy( (char*)databuf_->data(), bs.str(), databuf_->size() );
+
+    return true;
+}
+
+
+DataBuffer* ODDLSite::obtainResultBuf()
+{
+    DataBuffer* ret = databuf_;
+    databuf_ = nullptr;
+    return ret;
+}
+
+
+bool ODDLSite::getFiles( const BufferStringSet& fnms, const char* outputdir,
+			 TaskRunner& taskrunner, bool canfail )
+{
+    errmsg_.setEmpty();
+    BufferStringSet fullurls;
+    for ( int idx=0; idx<fnms.size(); idx++ )
+	fullurls.add( fullURL(fnms.get(idx)) );
+
+    const uiRetVal uirv = Network::downloadFiles( fullurls, outputdir,
+						  &taskrunner, canfail );
+    if( uirv.isError() )
+	errmsg_ = uirv.messages().cat();
+
+    return uirv.isOK();
+}
+
+
+od_int64 ODDLSite::getFileSize( const char* relfilenm )
+{
+    od_int64 ret = 0;
+    const BufferString fullurl = fullURL( relfilenm );
+    Network::getRemoteFileSize( fullurl.buf(), ret, errmsg_ );
+    return ret;
+}
+
+
+void ODDLSite::reqFinish( CallBacker* )
+{
+    //TODO implement
+}
+
+
+BufferString ODDLSite::getFileName( const char* relfnm ) const
+{
+    if ( islocal_ )
+	return FilePath( host_, subdir_, relfnm ).fullPath();
+
+    BufferString ret( "/" );
+    if ( subdir_.isEmpty() )
+	ret.add( relfnm );
+    else
+	ret.add( FilePath( subdir_, relfnm ).fullPath(FilePath::Unix) );
+    return ret;
+}
+
+
+BufferString ODDLSite::fullURL( const char* relfnm ) const
+{
+    if ( islocal_ )
+	return getFileName( relfnm );
+
+    BufferString ret( issecure_ ? "https://" : "http://" );
+    ret.add( host_ ).add( getFileName(relfnm) );
+    return ret;
+}

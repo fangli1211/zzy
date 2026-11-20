@@ -1,0 +1,350 @@
+/*+
+________________________________________________________________________
+
+ Copyright:	(C) 1995-2022 dGB Beheer B.V.
+ License:	https://dgbes.com/licensing
+________________________________________________________________________
+
+-*/
+
+#include "bufstring.h"
+
+#include "arrayndimpl.h"
+#include "file.h"
+#include "globexpr.h"
+#include "perthreadrepos.h"
+#include "odcommonenums.h"
+
+#include <QCryptographicHash>
+#include <QFile>
+#include <QString>
+#if QT_VERSION >= QT_VERSION_CHECK(6,0,0)
+# include <QByteArrayView>
+#endif
+
+
+static StringView emptyfixedstring( "" );
+
+StringView::StringView( const char* p )
+    : str_(p)
+{}
+
+
+StringView::~StringView()
+{}
+
+
+const StringView& StringView::empty()
+{
+    return emptyfixedstring;
+}
+
+
+bool StringView::operator==( const BufferString& s ) const
+{
+    return isEqual(s.str());
+}
+
+
+bool StringView::operator!=( const BufferString& s ) const
+{
+    return !isEqual(s.str());
+}
+
+
+// StringBase
+StringBase::StringBase()
+{}
+
+
+StringBase::~StringBase()
+{}
+
+
+const StringBase& StringBase::empty()
+{ return emptyfixedstring; }
+
+
+unsigned int StringBase::size() const
+{
+    const char* my_str = gtStr();
+    return my_str ? (unsigned int)strlen( my_str ) : 0;
+}
+
+
+bool StringBase::operator >( const char* s ) const
+{
+    const char* my_str = gtStr();
+    return s && my_str ? strcmp(my_str,s) > 0 : (bool)my_str;
+}
+
+
+bool StringBase::operator <( const char* s ) const
+{
+    const char* my_str = gtStr();
+    return s && my_str ? strcmp(my_str,s) < 0 : (bool)s;
+}
+
+
+#define mIsEmpty(str) (!str || !*str)
+
+#define mRetEmptyEquality(s1,s2) \
+    if ( s1 == s2 || ( mIsEmpty(s1) && mIsEmpty(s2) ) )\
+	return true; \
+    else if ( mIsEmpty(s1) || mIsEmpty(s2) ) \
+	return false;\
+
+#define mGetMeForEquality() \
+    const char* me = gtStr(); \
+    mRetEmptyEquality( me, s )
+
+
+bool StringBase::isEqual( const char* s, OD::CaseSensitivity sens ) const
+{
+#ifdef __debug__
+    if ( s && gtStr()==s )
+    {
+	if ( isStaticString(this) )
+	{
+	    pErrMsg("Static string compared to itself");
+	}
+    }
+#endif
+    mGetMeForEquality();
+    return sens==OD::CaseInsensitive ? caseInsensitiveEqual(me,s,0)
+				     : !strcmp( me, s );
+}
+
+
+bool StringBase::isStartOf( const char* s, OD::CaseSensitivity sens ) const
+{
+    mGetMeForEquality();
+    return sens==OD::CaseInsensitive ? stringStartsWithCI(me,s)
+				     : stringStartsWith(me,s);
+}
+
+
+bool StringBase::startsWith( const char* s, OD::CaseSensitivity sens ) const
+{
+    mGetMeForEquality();
+    return sens==OD::CaseInsensitive ? stringStartsWithCI(s,me)
+				     : stringStartsWith(s,me);
+}
+
+
+bool StringBase::isEndOf( const char* s, OD::CaseSensitivity sens ) const
+{
+    mGetMeForEquality();
+    return sens==OD::CaseInsensitive ? stringEndsWithCI(me,s)
+				     : stringEndsWith(me,s);
+}
+
+
+bool StringBase::endsWith( const char* s, OD::CaseSensitivity sens ) const
+{
+    mGetMeForEquality();
+    return sens==OD::CaseInsensitive ? stringEndsWithCI(s,me)
+				     : stringEndsWith(s,me);
+}
+
+
+bool StringBase::matches( const char* s, OD::CaseSensitivity sens ) const
+{
+    mGetMeForEquality();
+    return GlobExpr(s,sens).matches( me );
+}
+
+
+bool StringBase::contains( char tofind ) const
+{
+    const char* me = gtStr();
+    return me ? (bool) firstOcc( me, tofind ) : false;
+}
+
+
+bool StringBase::contains( const char* tofind ) const
+{
+    return (bool) firstOcc( gtStr(), tofind );
+}
+
+
+const char* StringBase::find( char c ) const
+{ return firstOcc( str(), c ); }
+const char* StringBase::findLast( char c ) const
+{ return lastOcc( str(), c ); }
+const char* StringBase::find( const char* s ) const
+{ return firstOcc( str(), s ); }
+const char* StringBase::findLast( const char* s ) const
+{ return lastOcc( str(), s ); }
+
+
+unsigned int StringBase::count( char tocount ) const
+{
+    const char* ptr = gtStr();
+    int ret = 0;
+    if ( !ptr )
+	return ret;
+
+    while ( *ptr )
+    {
+	if ( *ptr == tocount )
+	    ret++;
+	ptr++;
+    }
+
+    return ret;
+}
+
+
+unsigned int StringBase::getLevenshteinDist( const char* s,
+					     bool casesens ) const
+{
+    const unsigned int len1 = size();
+    const unsigned int len2 = StringView(s).size();
+    if ( len1 == 0 ) return len2;
+    if ( len2 == 0 ) return len1;
+    const char* s1 = str();
+    const char* s2 = s;
+
+    Array2DImpl<unsigned int> d( len1+1, len2+1 );
+
+    for ( unsigned int idx1=0; idx1<=len1; idx1++ )
+	d.set( idx1, 0, idx1 );
+    for ( unsigned int idx2=0; idx2<=len2; idx2++ )
+	d.set( 0, idx2, idx2 );
+
+    for ( unsigned int idx2=1; idx2<=len2; idx2++ )
+    {
+	for ( unsigned int idx1=1; idx1<=len1; idx1++ )
+	{
+	    const bool iseq = casesens ? s1[idx1-1] == s2[idx2-1]
+			: toupper(s1[idx1-1]) == toupper(s2[idx2-1]);
+	    if ( iseq )
+		d.set( idx1, idx2, d.get(idx1-1,idx2-1) );
+	    else
+	    {
+		const unsigned int delval = d.get( idx1-1, idx2 );
+		const unsigned int insval = d.get( idx1, idx2-1 );
+		const unsigned int substval = d.get( idx1-1, idx2-1 );
+		d.set( idx1, idx2, 1 + (delval < insval
+			? (delval<substval ? delval : substval)
+		        : (insval<substval ? insval : substval)) );
+	    }
+	}
+    }
+
+    return d.get( len1, len2 );
+}
+
+
+bool StringBase::isNumber( bool int_only ) const
+{
+    return isNumberString( str(), int_only );
+}
+
+
+bool StringBase::isYesNo() const
+{
+    return isEqual( "yes", OD::CaseInsensitive ) ||
+	   isEqual( "no", OD::CaseInsensitive );
+}
+
+
+int StringBase::toInt() const
+{
+    return ::toInt( str() );
+}
+
+
+od_uint64 StringBase::toUInt64() const
+{
+    const double val = toDouble();
+    return od_uint64(val);
+}
+
+
+float StringBase::toFloat() const
+{
+    return ::toFloat( str() );
+}
+
+
+double StringBase::toDouble() const
+{
+    return ::toDouble( str() );
+}
+
+
+bool StringBase::toBool() const
+{
+    return ::toBool( str() );
+}
+
+
+std::wstring StringBase::toStdWString() const
+{
+    const QString qstr( buf() );
+    return qstr.toStdWString();
+}
+
+
+namespace Crypto
+{
+
+static QCryptographicHash::Algorithm getAlgo( Algorithm typ )
+{
+    //Do not introduce obsolete algorithms like md4, md5, sha1
+    switch( typ )
+    {
+	case Algorithm::Sha256: return QCryptographicHash::Sha256;
+	case Algorithm::Sha384: return QCryptographicHash::Sha384;
+	case Algorithm::Sha512: return QCryptographicHash::Sha512;
+	case Algorithm::Sha3_224: return QCryptographicHash::Sha3_224;
+	case Algorithm::Sha3_256: return QCryptographicHash::Sha3_256;
+	case Algorithm::Sha3_384: return QCryptographicHash::Sha3_384;
+	case Algorithm::Sha3_512: return QCryptographicHash::Sha3_512;
+	default: return QCryptographicHash::Sha3_512;
+    }
+}
+
+} // namespace Crypto
+
+
+const char* StringBase::getHash( Crypto::Algorithm typ ) const
+{
+    mDeclStaticString(ret);
+    if ( typ == Crypto::Algorithm::None )
+	return buf();
+
+    const QString input = buf();
+    const QCryptographicHash::Algorithm qalgo = getAlgo( typ );
+    const QByteArray qarr = input.toUtf8();
+#if QT_VERSION >= QT_VERSION_CHECK(6,3,0)
+    const QByteArrayView qarrview( qarr );
+    const QByteArray qhasharr = QCryptographicHash::hash( qarrview, qalgo );
+#else
+    const QByteArray qhasharr = QCryptographicHash::hash( qarr, qalgo );
+#endif
+    const QString qres = QLatin1String( qhasharr.toHex() );
+    ret.setEmpty().add( qres );
+
+    return ret.buf();
+}
+
+
+BufferString File::getHash( const char* fnm, Crypto::Algorithm typ )
+{
+    const QCryptographicHash::Algorithm qalgo = getAlgo( typ );
+    QFile qfile( fnm );
+    if ( !qfile.open(QFile::ReadOnly) )
+	return BufferString::empty();
+
+    QCryptographicHash hasher( qalgo );
+    if ( !hasher.addData(&qfile) )
+	return BufferString::empty();
+
+    const QByteArray qarr = hasher.result();
+    const QString qres = QLatin1String( qarr.toHex() );
+
+    return BufferString( qres );
+}

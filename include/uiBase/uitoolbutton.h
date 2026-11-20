@@ -1,0 +1,115 @@
+#pragma once
+/*+
+________________________________________________________________________
+
+ Copyright:	(C) 1995-2022 dGB Beheer B.V.
+ License:	https://dgbes.com/licensing
+________________________________________________________________________
+
+-*/
+
+#include "uibasemod.h"
+#include "uibutton.h"
+#include "uistrings.h"
+
+class uiToolButtonBody;
+class uiToolButtonSetup;
+
+
+mExpClass(uiBase) uiToolButton : public uiButton
+{
+public:
+    enum ArrowType		{ NoArrow,
+				  UpArrow, DownArrow, LeftArrow, RightArrow };
+    enum PopupMode		{ DelayedPopup, MenuButtonPopup, InstantPopup };
+    enum ButtonStyle		{ IconOnly, ButtonTextOnly, TextBesideIcon,
+				  TextUnderIcon, FollowStyle };
+
+				uiToolButton(uiParent*,
+					     const uiToolButtonSetup&);
+				uiToolButton(uiParent*,const char* filenm,
+					     const uiString& tooltip);
+				uiToolButton(uiParent*,const char* filenm,
+					     const uiString& tooltip,
+					     const CallBack&);
+				uiToolButton(uiParent*,ArrowType,
+					     const uiString& tooltip,
+					     const CallBack&);
+				~uiToolButton();
+				mOD_DisableCopy(uiToolButton)
+
+    static uiToolButton*	getStd(uiParent*,OD::StdActionType,
+					const CallBack&,const uiString& ttip);
+
+    bool			isOn() const;
+    void			setOn(bool yn=true);
+
+    void			setToggleButton(bool yn=true);
+    bool			isToggleButton() const;
+
+    void			setArrowType(ArrowType);
+    void			setToolButtonStyle(ButtonStyle);
+    ButtonStyle			toolButtonStyle() const;
+
+    void			setShortcut(const char*);
+    void			setMenu(uiMenu*,PopupMode=MenuButtonPopup);
+				//!<Menu becomes mine
+
+    const uiMenu*		menu() const		{ return uimenu_; }
+
+    void			setID( int i )		{ id_ = i; }
+    int				id() const		{ return id_; }
+
+    void			click() override;
+
+private:
+
+    uiToolButtonBody*		tbbody_;
+    uiToolButtonBody&		mkbody(uiParent*,const char* icon_identifier,
+				       const uiString&);
+
+    int				id_				= -1;
+				// Used by toolbar
+
+    uiMenu*			uimenu_				= nullptr;
+
+};
+
+
+#define mDefuiTBSUMemb(typ,memb) mDefSetupClssMemb(uiToolButtonSetup,typ,memb)
+
+mExpClass(uiBase) uiToolButtonSetup
+{
+public:
+			uiToolButtonSetup( const char* ic, const uiString& tt,
+					   const CallBack& c , const uiString&
+					   nm = uiStrings::sEmptyString() )
+			    : icid_(ic)
+			    , tooltip_(tt)
+			    , cb_(c)
+			    , istoggle_(false)
+			    , ison_(false)
+			    , isimmediate_(false)
+			    , arrowtype_(uiToolButton::NoArrow)
+			    , name_(!nm.isEmpty() ? nm : tt)
+			{}
+			~uiToolButtonSetup()
+			{}
+
+    mDefuiTBSUMemb(BufferString,icid);
+    mDefuiTBSUMemb(uiString,tooltip);
+    mDefuiTBSUMemb(CallBack,cb);
+
+    mDefuiTBSUMemb(bool,istoggle);
+    mDefuiTBSUMemb(bool,ison);
+    mDefuiTBSUMemb(bool,isimmediate);
+    mDefuiTBSUMemb(uiToolButton::ArrowType,arrowtype);
+    mDefuiTBSUMemb(BufferString,shortcut);
+    mDefuiTBSUMemb(uiString,name);
+
+    uiButton*		getButton(uiParent*,bool forcetoolbutton=false) const;
+			//!< pushbutton if name_ != tooltip_ and !istoggle_
+    uiToolButton*	getToolButton(uiParent*) const;
+    uiPushButton*	getPushButton(uiParent*,bool withicon=true) const;
+
+};

@@ -1,0 +1,99 @@
+/*+
+________________________________________________________________________
+
+ Copyright:	(C) 1995-2022 dGB Beheer B.V.
+ License:	https://dgbes.com/licensing
+________________________________________________________________________
+
+-*/
+
+#include "testprog.h"
+
+#include "array2dmatrix.h"
+#include "arraynddumper.h"
+
+
+static bool testMultiply()
+{
+    // example from:
+    // https://www.mathsisfun.com/algebra/matrix-multiplying.html
+    Array2DMatrix<float> mat( 1, 3 );
+    Array2DMatrix<float> mat2( 3, 4 );
+    mat.get(0,0) = 3; mat.get(0,1) = 4; mat.get(0,2) = 2;
+    mat2.get(0,0) = 13; mat2.get(0,1) = 9; mat2.get(0,2) = 7; mat2.get(0,3)= 15;
+    mat2.get(1,0) = 8; mat2.get(1,1) = 7; mat2.get(1,2) = 4; mat2.get(1,3)= 6;
+    mat2.get(2,0) = 6; mat2.get(2,1) = 4; mat2.get(2,2) = 0; mat2.get(2,3)= 3;
+
+    mat.multiply( mat2 );
+    Array2DMatrix<float> exp( 1, 4 );
+    exp.get(0,0) = 83; exp.get(0,1) = 63; exp.get(0,2) = 37; exp.get(0,3) = 75;
+    mRunStandardTest( mat.isEq( exp.a2d_, 0.0001 ),
+		      "Matrix multiply" );
+
+    return true;
+}
+
+static bool testCholesky()
+{
+    Array2DMatrix<float> mat( 3 );
+    // example from wikipedia
+    mat.get(0,0) = 4;
+    mat.get(1,1) = 37;
+    mat.get(2,2) = 98;
+    mat.get(0,1) = mat.get(1,0) = 12;
+    mat.get(0,2) = mat.get(2,0) = -16;
+    mat.get(1,2) = mat.get(2,1) = -43;
+
+    Array2DMatrix<float> out( 3 );
+    mat.getCholesky( out );
+
+    Array2DMatrix<float> exp( 3 );
+    exp.get(0,0) = 2;
+    exp.get(1,1) = 1;
+    exp.get(2,2) = 3;
+    exp.get(1,0) = 6;
+    exp.get(2,0) = -8;
+    exp.get(2,1) = 5;
+
+    mRunStandardTest( out.isEq( exp.a2d_,0.0001 ),
+		      "Cholesky decomp (1)" );
+
+    mat.get(0,0) = mat.get(1,1) = mat.get(2,2) = 1;
+    mat.get(0,1) = mat.get(1,0) = 0.6f;
+    mat.get(0,2) = mat.get(2,0) = 0.3f;
+    mat.get(1,2) = mat.get(2,1) = 0.5f;
+
+    mat.getCholesky( out );
+
+    ArrayNDDumper<float> matdmpr( mat.a2d_ );
+    logStream() << "Inp matrix" << od_endl;
+    matdmpr.dump( logStream() );
+
+    logStream() << "Cholesky matrix" << od_endl;
+    ArrayNDDumper<float> outdmpr( out.a2d_ );
+    outdmpr.dump( logStream() );
+
+    exp.get(0,0) = 1;
+    exp.get(1,1) = 0.8f;
+    exp.get(2,2) = 0.8660254f;
+    exp.get(1,0) = 0.6f;
+    exp.get(2,0) = 0.3f;
+    exp.get(2,1) = 0.4f;
+
+    mRunStandardTest( out.isEq( exp.a2d_, 0.0001 ),
+		      "Cholesky decomp (2)" );
+
+    return true;
+}
+
+
+int mTestMainFnName( int argc, char** argv )
+{
+    mInitTestProg();
+
+    if ( !testMultiply() ||
+	 !testCholesky() )
+	return 1;
+
+    return 0;
+}

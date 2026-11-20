@@ -1,0 +1,433 @@
+/*+
+________________________________________________________________________
+
+ Copyright:	(C) 1995-2022 dGB Beheer B.V.
+ License:	https://dgbes.com/licensing
+________________________________________________________________________
+
+-*/
+
+#include "applicationdata.h"
+#include "moddepmgr.h"
+#include "oscommand.h"
+#include "sighndl.h"
+#include "string.h"
+#include "testprog.h"
+#include "varlenarray.h"
+
+#include "netreqconnection.h"
+#include "netreqpacket.h"
+#include "netserver.h"
+#include "netsocket.h"
+
+
+#define mLargePayload 50000000
+
+static BufferString packetString( const char* prefix,
+				  const char* start,
+				  const Network::RequestPacket* packet )
+{
+    BufferString ret = prefix;
+    ret.add( start );
+    ret.add( " Request " ).add( packet->requestID() )
+       .add( " SubID " ).add( packet->subID() );
+
+    return ret;
+}
+
+
+class Tester : public CallBacker
+{
+public:
+
+    Tester( const Network::Authority& auth )
+	: authority_(auth)
+    {}
+
+    ~Tester()
+    {
+	detachAllNotifiers();
+	CallBack::removeFromThreadCalls( this );
+    }
+
+    void runEventLoopTest(CallBacker*)
+    {
+	prefix_ = "[multithreaded] ";
+	bool res = runTest( true, true );
+	ApplicationData::exit( res ? 0 : 1 );
+    }
+
+    bool testShutdown( bool multithreaded )
+    {
+	const BufferString pfx = multithreaded ? "[shutdown multithreaded] "
+					       : "[shutdown singlethreaded] ";
+	Network::RequestConnection conn( authority_, multithreaded );
+	mRunStandardTestWithError( conn.isOK(),
+				   BufferString(pfx,"Connection is OK"),
+				   toString(conn.errMsg()) );
+
+	if ( multithreaded )
+	{
+	    mRunStandardTest( conn.isMultiThreaded(),
+			      BufferString(pfx,"Connection is multithreaded") );
+	}
+
+	conn.shutdown();
+
+	mRunStandardTest( !conn.isOK(),
+		    BufferString(pfx,"Connection not OK after shutdown") );
+	mRunStandardTest( !conn.isMultiThreaded(),
+		    BufferString(pfx,"Socket thread stopped after shutdown") );
+
+	RefMan<Network::RequestPacket> packet = new Network::RequestPacket;
+	packet->setIsNewRequest();
+	packet->setStringPayload( "After shutdown" );
+	mRunStandardTest( !conn.sendPacket( *packet ),
+			  BufferString(pfx,"Cannot send after shutdown") );
+
+	return true;
+    }
+
+    bool testShutdownAfterPickupTimeout( bool multithreaded )
+    {
+	const BufferString pfx = multithreaded
+			    ? "[shutdown after pickup timeout multithreaded] "
+			    : "[shutdown after pickup timeout singlethreaded] ";
+	Network::RequestConnection conn( authority_, multithreaded );
+	mRunStandardTestWithError( conn.isOK(),
+				   BufferString(pfx,"Connection is OK"),
+				   toString(conn.errMsg()) );
+
+	if ( !multithreaded && conn.socket() )
+	    conn.socket()->setTimeout( 200 );
+
+	RefMan<Network::RequestPacket> packet = new Network::RequestPacket;
+	packet->setIsNewRequest();
+	packet->setStringPayload( "NoReply" );
+	mRunStandardTestWithError( conn.sendPacket( *packet ),
+				   BufferString(pfx,"Sending NoReply packet"),
+				   toString(conn.errMsg()) );
+
+	int errorcode = 0;
+	const int waittime = 500;
+	RefMan<Network::RequestPacket> received =
+		conn.pickupPacket( packet->requestID(), waittime, &errorcode );
+	mRunStandardTest( !received.ptr(),
+			  BufferString(pfx,"pickupPacket timed out") );
+
+	if ( multithreaded )
+	{
+	    mRunStandardTest( errorcode==Network::RequestConnection::cTimeout(),
+			      BufferString(pfx,"Timeout error code") );
+	}
+
+	conn.shutdown();
+
+	mRunStandardTest( !conn.isOK(),
+		    BufferString(pfx,"Connection not OK after shutdown") );
+	mRunStandardTest( !conn.isMultiThreaded(),
+		    BufferString(pfx,"Socket thread stopped after shutdown") );
+
+	RefMan<Network::RequestPacket> afterpacket = new Network::RequestPacket;
+	afterpacket->setIsNewRequest();
+	afterpacket->setStringPayload( "After shutdown" );
+	mRunStandardTest( !conn.sendPacket( *afterpacket ),
+			  BufferString(pfx,"Cannot send after shutdown") );
+
+	return true;
+    }
+
+    bool runTest( bool sendkill, bool multithreaded )
+    {
+	Network::RequestConnection conn( authority_, multithreaded );
+	mRunStandardTestWithError( conn.isOK(),
+	      BufferString( prefix_, "Connection is OK"),
+	      toString(conn.errMsg()) );
+	conn_ = &conn;
+	mAttachCB( conn.packetArrived, Tester::packetArrivedCB );
+
+	RefMan<Network::RequestPacket> packet = new Network::RequestPacket;
+	BufferString sentmessage = "Hello World";
+	packet->setIsNewRequest();
+	packet->setStringPayload( sentmessage );
+
+	mRunStandardTestWithError( conn.sendPacket( *packet ),
+	      packetString( prefix_, "Sending", packet.ptr() ),
+	      toString(conn.errMsg()) );
+
+	RefMan<Network::RequestPacket> largepacket = new Network::RequestPacket;
+	largepacket->setIsNewRequest();
+	mAllocLargeVarLenArr( char, payload, mLargePayload+1 );
+	char* payloadptr = payload.ptr();
+	memset( payloadptr, ' ', mLargePayload );
+	payload[mLargePayload] = 0;
+
+	largepacket->setStringPayload( payloadptr );
+
+	mRunStandardTestWithError( conn.sendPacket( *largepacket ),
+	      packetString( prefix_,"Sending large packet",largepacket.ptr()),
+	      toString(conn.errMsg()) );
+
+	RefMan<Network::RequestPacket> packet2 = new Network::RequestPacket;
+	packet2->setRequestID( packet->requestID() );
+	packet2->setSubID( 1 );
+	BufferString sentmessage2 = "Peace on Earth!";
+	packet2->setStringPayload( sentmessage2 );
+
+	mRunStandardTestWithError( conn.sendPacket( *packet2 ),
+	  packetString( prefix_, "Sending", packet2.ptr() ),
+	  toString(conn.errMsg()) );
+
+	RefMan<Network::RequestPacket> receivedpacket;
+
+	receivedpacket = conn.pickupPacket( packet->requestID(), 20000 );
+	mRunStandardTestWithError( receivedpacket.ptr(),
+				   packetString( prefix_, "Receiving",
+				   packet.ptr() ), toString(conn.errMsg()) );
+
+	BufferString receivedmessage1;
+	receivedpacket->getStringPayload( receivedmessage1 );
+	mRunStandardTest( receivedmessage1==sentmessage &&
+			 receivedpacket->requestID()==packet->requestID() &&
+			 receivedpacket->subID()==packet->subID(),
+			 packetString(prefix_,"Received content",packet.ptr()));
+
+	receivedpacket = conn.pickupPacket( packet->requestID(), 20000 );
+	mRunStandardTestWithError( receivedpacket.ptr(),
+				packetString(prefix_,"Receiving",packet2.ptr()),
+				toString(conn.errMsg()) );
+
+	BufferString receivedmessage2;
+	receivedpacket->getStringPayload( receivedmessage2 );
+	mRunStandardTest( receivedmessage2==sentmessage2 &&
+			 receivedpacket->requestID()==packet2->requestID() &&
+			 receivedpacket->subID()==packet2->subID(),
+		packetString(prefix_,"Received content",packet2.ptr()) );
+
+	receivedpacket = conn.pickupPacket( largepacket->requestID(), 20000 );
+	mRunStandardTestWithError( receivedpacket.ptr(),
+		packetString(prefix_,"Receiving large",largepacket.ptr()),
+		toString(conn.errMsg()) );
+
+	BufferString receivedlongmessage;
+	receivedpacket->getStringPayload( receivedlongmessage );
+	mRunStandardTest(
+	     receivedlongmessage==payloadptr &&
+	     receivedpacket->requestID()==largepacket->requestID() &&
+	     receivedpacket->subID()==largepacket->subID(),
+	     packetString(prefix_,"Large packet content",largepacket.ptr()) );
+
+	if ( !sendPacketInOtherThread() )
+	    return false;
+
+	{
+	    //Send a packet that requests a disconnect. Server will
+	    //disconnect, and we should not be able to read the packet.
+	    //
+	    //Further, the errorcode should be set correctly.
+
+	    Network::RequestConnection conn2( authority_,
+					      multithreaded );
+	    mRunStandardTestWithError( conn2.isOK(),
+	      BufferString( prefix_, "Connection 2 is OK"),
+	      toString(conn.errMsg()) );
+
+	    RefMan<Network::RequestPacket> disconnectpacket =
+						new Network::RequestPacket;
+	    disconnectpacket->setIsNewRequest();
+	    disconnectpacket->setStringPayload( "Disconnect" );
+
+	    mRunStandardTestWithError( conn2.sendPacket( *disconnectpacket ),
+	      packetString(prefix_,"Sending disconnect",disconnectpacket.ptr()),
+	      toString(conn2.errMsg()) );
+
+	    int errorcode = 0;
+	    mRunStandardTest(
+	      !(receivedpacket=conn2.pickupPacket(disconnectpacket->requestID(),
+		  20000, &errorcode )),
+	      packetString( prefix_, "Receiving disconnect should fail",
+		  disconnectpacket.ptr() ) );
+
+	    mRunStandardTest(errorcode==conn2.cDisconnected(),
+	      packetString( prefix_, "Errorcode == disconnection",
+			    disconnectpacket.ptr() ) );
+	}
+
+	if ( sendkill )
+	{
+	    RefMan<Network::RequestPacket> killpacket =
+						new Network::RequestPacket;
+	    killpacket->setStringPayload( Network::Server::sKeyKillword() );
+	    killpacket->setIsNewRequest();
+
+	    mRunStandardTestWithError( conn.sendPacket( *killpacket ),
+			  BufferString( prefix_, "Sending kill packet"),
+			   toString(conn.errMsg()) );
+	}
+
+	return true;
+    }
+
+
+    void packetArrivedCB(CallBacker* cb)
+    {
+	mCBCapsuleUnpackWithCaller( od_int32, reqid, cber, cb );
+	mDynamicCastGet(Network::RequestConnection*, conn, cber );
+	RefMan<Network::RequestPacket> packet = conn->getNextExternalPacket();
+	if ( packet )
+	{
+	    Threads::MutexLocker locker( condvar_ );
+	    unexpectedarrived_ = true;
+	    condvar_.signal( true );
+	    reqid++; //Avoid unused warning.
+	}
+    }
+
+    bool sendPacketInOtherThread()
+    {
+	sendres_ = false;
+	Threads::Thread thread( mCB(this,Tester,threadSend),
+				"threadSend thread" );
+	thread.waitForFinish();
+	return sendres_;
+    }
+
+    void threadSend(CallBacker*)
+    {
+	sendres_ = sendMessageInThread();
+    }
+
+    bool sendMessageInThread()
+    {
+	RefMan<Network::RequestPacket> packet = new Network::RequestPacket;
+	BufferString sentmessage = "Hello World";
+	packet->setIsNewRequest();
+	packet->setStringPayload( sentmessage );
+
+	mRunStandardTestWithError(
+	      conn_->sendPacket( *packet )==conn_->isMultiThreaded(),
+	      packetString(prefix_,"Sending from other thread",packet.ptr()),
+	      toString(conn_->errMsg()) );
+
+	RefMan<Network::RequestPacket> receivedpacket =
+	    conn_->pickupPacket( packet->requestID(), 20000 );
+	mRunStandardTestWithError(
+	    ((bool) receivedpacket)==conn_->isMultiThreaded(),
+	    packetString(prefix_,"Receiving from other thread",packet.ptr()),
+	    toString(conn_->errMsg()) );
+
+	if ( receivedpacket )
+	{
+	    BufferString receivedmessage1;
+	    receivedpacket->getStringPayload( receivedmessage1 );
+	    mRunStandardTest( receivedmessage1==sentmessage &&
+		 receivedpacket->requestID()==packet->requestID() &&
+		 receivedpacket->subID()==packet->subID(),
+		 packetString( prefix_, "Received content from other thread",
+			       packet.ptr() ) );
+	}
+
+
+	return true;
+    }
+
+
+    Threads::ConditionVar	condvar_;
+    bool			unexpectedarrived_ = false;
+
+    Network::RequestConnection* conn_ = nullptr;
+    bool			sendres_ = false;
+
+    BufferString		prefix_;
+    Network::Authority		authority_;
+};
+
+
+static void terminateServer( const PID_Type pid )
+{
+    Threads::sleep( 0.1 );
+    if ( pid < 1 || !isProcessAlive(pid) )
+        return;
+
+    errStream() << "Terminating zombie server with PID: " << pid << od_endl;
+    SignalHandling::stopProcess( pid );
+}
+
+
+int mTestMainFnName( int argc, char** argv )
+{
+    mInitTestProg();
+    ApplicationData app;
+    OD::ModDeps().ensureLoaded( "Network" );
+
+    Network::Authority auth;
+    auth.setFrom( clParser(), "test_netreq",
+		  Network::Socket::sKeyLocalHost(), PortNr_Type(1025) );
+    if ( !auth.isUsable() )
+    {
+	od_ostream& strm = errStream();
+	strm << "Incorrect authority '" << auth.toString() << "'";
+	strm << "for starting the server" << od_endl;
+	return 1;
+    }
+
+    PID_Type serverpid = -1;
+    if ( !clParser().hasKey("noechoapp") )
+    {
+	BufferString echoapp( "test_netreqechoserver" );
+	clParser().setKeyHasValue( "serverapp" );
+	clParser().getVal( "serverapp", echoapp );
+	echoapp = GetODApplicationName( echoapp );
+
+	OS::MachineCommand mc( echoapp );
+	auth.addTo( mc );
+	//if ( OD::GetQuietFlag() )
+	    mc.addFlag( sKey::Quiet() );
+
+	const OS::CommandExecPars execpars( OS::RunInBG );
+	OS::CommandLauncher cl(mc);
+	if ( !cl.execute(execpars) )
+	{
+	    od_ostream& strm = errStream();
+	    strm << "Cannot start " << mc.toString( &execpars );
+	    strm << ": " << toString(cl.errorMsg()) << od_endl;
+	    return 1;
+	}
+
+	Threads::sleep( 1 );
+	serverpid = cl.processID();
+	mRunStandardTest( (isProcessAlive(serverpid)),
+			BufferString("Server started with PID: ", serverpid) );
+    }
+
+    Tester runner( auth );
+    runner.prefix_ = "[singlethreaded] ";
+    if ( !runner.runTest(false,false) )
+    {
+	terminateServer( serverpid );
+	return 1;
+    }
+
+    if ( !runner.testShutdown(false) || !runner.testShutdown(true) ||
+	 !runner.testShutdownAfterPickupTimeout(false) ||
+	 !runner.testShutdownAfterPickupTimeout(true) )
+    {
+	terminateServer( serverpid );
+	return 1;
+    }
+
+    //Now with a running event loop
+
+    CallBack::addToMainThread( mCB(&runner,Tester,runEventLoopTest) );
+    const int retval = app.exec();
+
+    if ( serverpid > 0 )
+    {
+	Threads::sleep(1);
+	mRunStandardTest( (!isProcessAlive(serverpid)),
+			  "Server has been stopped" );
+	terminateServer( serverpid );
+    }
+
+    return retval;
+}

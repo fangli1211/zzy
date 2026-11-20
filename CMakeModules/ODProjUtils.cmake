@@ -1,0 +1,67 @@
+#________________________________________________________________________
+#
+# Copyright:    (C) 1995-2022 dGB Beheer B.V.
+# License:      https://dgbes.com/licensing
+#________________________________________________________________________
+#
+
+macro( OD_FIND_PROJ )
+
+    if ( NOT OD_NO_PROJ AND NOT TARGET PROJ::proj )
+	if ( NOT TARGET SQLite3::SQLite3 )
+	    OD_FIND_SQLITE()
+	endif()
+
+	if ( TARGET SQLite3::SQLite3 )
+	    find_package( PROJ QUIET CONFIG GLOBAL PATHS "${PROJ_ROOT}" HINTS "${CMAKE_PREFIX_PATH}" NO_DEFAULT_PATH )
+	    if ( NOT TARGET PROJ::proj )
+		find_package( PROJ QUIET GLOBAL )
+		unset( PROJ_DIR CACHE )
+	    endif()
+	    if ( TARGET PROJ::proj )
+		od_setup_external_target( PROJ::proj )
+		unset( PROJ_ROOT CACHE )
+	    endif()
+	endif()
+    endif()
+
+endmacro(OD_FIND_PROJ)
+
+macro( OD_SETUP_PROJ )
+
+    if ( NOT OD_NO_PROJ )
+	if ( PROJ_FOUND AND TARGET ${PROJ_LIBRARIES} )
+	    if ( OD_LINKPROJ )
+		set( OD_LINKSQLITE Yes )
+		OD_SETUP_SQLITE()
+		list( APPEND OD_MODULE_EXTERNAL_LIBS "${PROJ_LIBRARIES}" )
+		if ( UNIX AND NOT APPLE )
+		    get_target_property( SQLite3_loc SQLite3::SQLite3 LOCATION )
+		    if ( SQLite3_loc )
+			list( APPEND OD_MODULE_LINK_OPTIONS "LINKER:--push-state,--no-as-needed" )
+			list( APPEND OD_MODULE_LINK_OPTIONS "${SQLite3_loc}" )
+			list( APPEND OD_MODULE_LINK_OPTIONS "LINKER:--pop-state" )
+		    endif()
+		    unset( SQLite3_loc )
+		endif()
+	    elseif ( OD_USEPROJ )
+		set( OD_USESQLITE Yes )
+		OD_SETUP_SQLITE()
+		list( APPEND OD_MODULE_EXTERNAL_RUNTIME_LIBS "${PROJ_LIBRARIES}" )
+	    endif()
+	else()
+	    set( PROJ_ROOT "" CACHE PATH "PROJ location" )
+	    message( SEND_ERROR "Cannot find/use the PROJ installation" )
+	endif()
+
+	get_filename_component( PROJ_DB_FILEPATH "${PROJ_INCLUDE_DIRS}/../share/proj/proj.db" ABSOLUTE )
+	list( APPEND OD_MODULE_COMPILE_DEFINITIONS
+		"__PROJ_DB_FILEPATH__=\"${PROJ_DB_FILEPATH}\"" )
+
+	install( FILES "${PROJ_DB_FILEPATH}"
+		 DESTINATION "${OD_DATA_INSTALL_RELPATH}/CRS" )
+	install( FILES "${PROJ_INCLUDE_DIRS}/../share/doc/proj/COPYING"
+		 DESTINATION "${OD_DATA_INSTALL_RELPATH}/CRS" )
+    endif()
+
+endmacro(OD_SETUP_PROJ)

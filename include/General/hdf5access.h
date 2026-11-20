@@ -1,0 +1,371 @@
+#pragma once
+/*+
+________________________________________________________________________
+
+ Copyright:	(C) 1995-2022 dGB Beheer B.V.
+ License:	https://dgbes.com/licensing
+________________________________________________________________________
+
+-*/
+
+#include "generalmod.h"
+#include "arrayndinfo.h"
+#include "integerid.h"
+#include "factory.h"
+
+
+namespace HDF5
+{
+
+typedef od_int64 hid_t;
+#define H5I_INVALID_HID (-1)
+
+class Reader;
+class Writer;
+
+typedef OD::DataRepType	ODDataType;
+
+mExpClass(General) LocationID : public IntegerID<hid_t>
+{
+public:
+    using IntegerID::IntegerID;
+				LocationID() : IntegerID(udfVal()) {}
+    static inline LocationID	get(hid_t nr)  { return LocationID(nr); }
+    static inline LocationID	udf()		 { return LocationID(); }
+    BufferString getComment() const;
+private:
+    hid_t			udfVal() const override
+				{ return H5I_INVALID_HID; }
+};
+
+
+mExpClass(General) ObjectID : public IntegerID<hid_t>
+{
+public:
+    using IntegerID::IntegerID;
+				ObjectID() : IntegerID(udfVal()) {}
+    static inline ObjectID	get(hid_t nr)  { return ObjectID(nr); }
+    static inline ObjectID	udf()		 { return ObjectID(); }
+
+private:
+    hid_t			udfVal() const override
+				{ return H5I_INVALID_HID; }
+};
+
+
+mExpClass(General) FileID : public IntegerID<hid_t>
+{
+public:
+    using IntegerID::IntegerID;
+				FileID() : IntegerID(udfVal()) {}
+    static inline FileID	get(hid_t nr)  { return FileID(nr); }
+    static inline FileID	udf()		 { return FileID(); }
+
+private:
+    hid_t			udfVal() const override
+				{ return H5I_INVALID_HID; }
+};
+
+
+mExpClass(General) GroupID : public IntegerID<hid_t>
+{
+public:
+    using IntegerID::IntegerID;
+				GroupID() : IntegerID(udfVal()) {}
+    static inline GroupID	get(hid_t nr)  { return GroupID(nr); }
+    static inline GroupID	udf()		 { return GroupID();   }
+    bool operator!()				{ return !isValid(); }
+private:
+    hid_t			udfVal() const override
+				{ return H5I_INVALID_HID; }
+};
+
+
+mExpClass(General) DatasetID : public IntegerID<hid_t>
+{
+public:
+    using IntegerID::IntegerID;
+				DatasetID() : IntegerID(udfVal()) {}
+    static inline DatasetID	get(hid_t nr)  { return DatasetID(nr); }
+    static inline DatasetID	udf()		 { return DatasetID(); }
+
+private:
+    hid_t			udfVal() const override
+				{ return H5I_INVALID_HID; }
+};
+
+
+mExpClass(General) DatatypeID : public IntegerID<hid_t>
+{
+public:
+    using IntegerID::IntegerID;
+				DatatypeID() : IntegerID(udfVal()) {}
+    static inline DatatypeID	get(hid_t nr)  { return DatatypeID(nr); }
+    static inline DatatypeID	udf()		 { return DatatypeID(); }
+
+private:
+    hid_t			udfVal() const override
+				{ return H5I_INVALID_HID; }
+};
+
+
+mExpClass(General) DataspaceID : public IntegerID<hid_t>
+{
+public:
+    using IntegerID::IntegerID;
+				DataspaceID() : IntegerID(udfVal()) {}
+    static inline DataspaceID	get(hid_t nr)  { return DataspaceID(nr); }
+    static inline DataspaceID	udf()		 { return DataspaceID(); }
+
+private:
+    hid_t			udfVal() const override
+				{ return H5I_INVALID_HID; }
+};
+
+
+/*\brief Key to groups and data sets in HDF5 files.
+
+  The group name and dataset key correspond to one dataset. Some attributes
+  are valid for an entire group, then leave the dataset name empty.
+  Leave the group name empty (null) for a top level DataSet
+
+  One can set edition and chunk sizes properties, which will be
+  used when creating the dataset and writing to it.
+
+ */
+
+mExpClass(General) DataSetKey
+{
+public:
+			DataSetKey(const char* grpnm=nullptr,
+				   const char* dsnm=nullptr);
+			~DataSetKey();
+
+    inline const char*	groupName() const	{ return grpnm_; }
+    inline DataSetKey&	setGroupName( const char* nm )
+					{ grpnm_.set( nm ); return *this; }
+    bool		hasGroup(const char* nm) const;
+
+    inline const char*	dataSetName() const	{ return dsnm_; }
+    inline DataSetKey&	setDataSetName( const char* nm )
+					{ dsnm_.set( nm ); return *this; }
+    inline bool		dataSetEmpty() const	{ return dsnm_.isEmpty(); }
+    inline bool		hasDataSet( const char* nm ) const
+						{ return dsnm_ == nm; }
+
+    inline bool		isEditable() const	{ return editable_; }
+    inline void		setEditable( bool yn )	{ editable_ = yn; }
+
+    BufferString	fullDataSetName() const;
+
+    static DataSetKey	groupKey(const DataSetKey& parentgrp,
+				 const char* subgrpnm);
+    static DataSetKey	groupKey(const char* parentfulldsnm,const char* grpnm);
+
+    void		setChunkSize(int idim,int sz);
+    void		setChunkSize(const int* szs,int nrdims=1,
+				     int from=0);
+			//<! Pass nullptr to disable
+    void		setMaximumSize(int idim,int maxsz=256);
+			/*!< Always switches on the editability
+			     Pass mUdf(int) to disable for a given dimension */
+
+    int			chunkSz(int idim) const;
+    int			maxDimSz(int idim) const;
+
+protected:
+
+    BufferString	grpnm_;
+    BufferString	dsnm_;
+
+    bool		editable_ = false;
+    TypeSet<int>	chunkszs_;
+    TypeSet<int>	maxsizedim_;
+
+};
+
+
+/*\brief simple specification of the 'hyperslab' concept in HDF5.
+
+  Basically, we offer a range + step in all dimensions, which seems enough for
+  almost all normal work.
+
+ */
+
+mExpClass(General) SlabDimSpec
+{
+public:
+
+    typedef ArrayNDInfo::idx_type	idx_type;
+
+    ArrayNDInfo::idx_type start_=0, step_=1, count_=-1; //!< -1 == full size
+    bool		operator==( const SlabDimSpec& oth ) const
+			{ return start_==oth.start_ && step_==oth.step_
+						    && count_==oth.count_; }
+
+};
+
+mExpClass(General) SlabSpec : public TypeSet<SlabDimSpec>
+{
+public:
+
+			mTypeDefArrNDTypes;
+
+			SlabSpec()			{}
+			SlabSpec( nr_dims_type nrdims ) { setNrDims( nrdims ); }
+
+    void		setNrDims(nr_dims_type nrdims)
+			{
+			    for (int idim=nrdims; idim<size(); idim++)
+				removeSingle( size()-1 );
+			    for (int idim=size(); idim<nrdims; idim++)
+				*this += SlabDimSpec();
+			}
+};
+
+
+/*\brief baseclass for reader and writer of HDF5 files.
+
+  HDF5 can be seen as a (simple) database in a file. As usual with this sort of
+  general-purpose utilities, the data model is bloated by many options that are
+  only interesting for some. As usual, we take our pick of the core stuff:
+
+  * The database is essentially a tree of nodes that are called 'Group'.
+  You can see this structure as a file system and it does use names like in a
+  UNIX file system. The root group '/' is always there, and it is the 'H5File'
+  itself. Thus, the Group is a 'directory'. Actually, it maps to a class
+  called H5::CommonFG, the base class for H5::H5File and H5::Group.
+
+  * Where 'Group' is like a directory, the files are 'DataSet' objects. Every
+  'DataSet' can be seen as an N-dimensional array of data. The dimensionalities
+  are covered by the 'DataSpace' object, which maps to our ArrayNDInfo.
+  Actually, as you will most likely get/put ArrayND data there, you can
+  see a DataSet as an ArrayND with accompanying properties.
+
+  * Each DataSet can have properties attached, like 'file header values'.
+  These are key-value pairs. The value can be anything - but our interface
+  will only read and write strings. This maps the set of properties to one
+  IOPar.
+
+  Notes:
+  * HDF5 'stores' can refer to more than 1 file. We do not use or support this
+    facilty.
+  * If you read HDF5 files not produced by us, there may be 'advanced' stuff
+    in there that we don't handle. The strategy is to do as if they do not
+    exist, and handle everything gracefully.
+  * The HDF5 data type system is richer than ours. We'll try to map to the
+    'nearest'.
+  * HDF5 and this interface are *not* MT-safe. Build your own locking.
+
+  */
+
+
+mExpClass(General) Access
+{ mODTextTranslationClass(HDF5::Access);
+public:
+			mTypeDefArrNDTypes;
+
+    virtual		~Access();
+
+    uiRetVal		open(const char*);
+    virtual const char*	fileName() const		= 0;
+    virtual bool	isReader() const		= 0;
+
+    virtual DataSetKey	scope() const			= 0;
+    virtual od_int64	curGroupID() const		= 0;
+
+    bool		isOpen() const		{ return fileid_.isValid(); }
+    FileID		getHDF5File()		{ return fileid_; }
+    bool		hasGroup(const char* grpnm) const;
+    bool		hasDataSet(const DataSetKey&) const;
+
+    virtual bool	isParallelEnabled() const	{ return false; }
+
+    static uiString	sHDF5PackageDispName();
+    static uiString	sHDF5NotAvailable();
+    static uiString	sHDF5NotAvailable(const char* fnm);
+    static uiString	sNotHDF5File(const char*);
+    static uiString	sHDF5FileNoLongerAccessible();
+    uiString		sCantSetScope(const DataSetKey&) const;
+    static uiString	sDataSetNotFound(const DataSetKey&);
+    static uiString	sCannotReadDataSet(const DataSetKey&);
+
+    static bool		isEnabled(const char* fortype=nullptr);
+    static bool		isEnvBlocked(const char* fortype=nullptr);
+    static bool		isHDF5File(const char*);
+
+    static const char*	sFileExtension();
+    static const char*	sIconName();
+    static const char*	sSettingsEnabKey();
+
+protected:
+			Access();
+
+    FileID		fileid_;
+    bool		myfile_		= false;
+
+    virtual void	closeFile()					= 0;
+    virtual void	openFile(const char*,uiRetVal&,bool ed)		= 0;
+
+    virtual LocationID		setLocation(const DataSetKey*)		= 0;
+    virtual LocationID		getLocation(const DataSetKey*) const	= 0;
+    virtual ObjectID		setScope(const DataSetKey*)		= 0;
+    virtual ObjectID		getScope(const DataSetKey*) const	= 0;
+    virtual GroupID		setGrpScope(const DataSetKey*)		= 0;
+    virtual GroupID		getGrpScope(const DataSetKey*) const	= 0;
+    virtual DatasetID		setDSScope(const DataSetKey&)		= 0;
+    virtual DatasetID		getDSScope(const DataSetKey&) const	= 0;
+			//!< Returns (new) scope. null for root scope
+
+    static uiString	sHDF5Err(const uiString&);
+    static uiString	sFileNotOpen();
+
+    static const char*	sOpenFileFirst();
+    static const char*	sNeedScope();
+    static const char*	sNoDataPassed();
+
+    friend class	AccessImpl;
+
+};
+
+
+mExpClass(General) AccessProvider
+{
+public:
+
+    virtual			~AccessProvider()			{}
+
+    mDefineFactoryInClass(AccessProvider,factory)
+
+    virtual Reader*		getReader() const			= 0;
+    virtual Writer*		getWriter() const			= 0;
+
+    static PtrMan<Reader>	mkReader(int n=-1);
+    static PtrMan<Writer>	mkWriter(int n=-1);
+
+protected:
+
+    static AccessProvider*	mkProv(int);
+
+};
+
+inline PtrMan<Reader> mkReader() { return AccessProvider::mkReader(); }
+inline PtrMan<Writer> mkWriter() { return AccessProvider::mkWriter(); }
+inline const char* sFileExtension() { return Access::sFileExtension(); }
+
+inline bool isAvailable()
+{ return !AccessProvider::factory().isEmpty(); }
+inline bool isEnabled( const char* typ=nullptr )
+{ return Access::isEnabled(typ); }
+inline bool isEnvBlocked( const char* typ=nullptr )
+{ return Access::isEnvBlocked(typ);}
+inline bool isHDF5File( const char* fnm )
+{ return Access::isHDF5File(fnm); }
+//!< Always false for non-existing file, even for an 'file.h5' string
+mGlobal(General) bool isParallelEnabled();
+
+inline const char* sSeismicsType()	{ return "Seismics"; }
+inline const char* sPickSetType()	{ return "PickSets"; }
+inline const char* sWellType()		{ return "Wells"; }
+
+} // namespace HDF5

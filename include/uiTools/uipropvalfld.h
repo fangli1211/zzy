@@ -1,0 +1,58 @@
+#pragma once
+/*+
+________________________________________________________________________
+
+ Copyright:	(C) 1995-2022 dGB Beheer B.V.
+ License:	https://dgbes.com/licensing
+________________________________________________________________________
+
+-*/
+
+#include "uitoolsmod.h"
+#include "uigroup.h"
+
+class PropertyRef;
+class UnitOfMeasure;
+class uiGenInput;
+class uiUnitSel;
+
+/*!\brief Interface for displaying/editing a value based on a PropertyRef
+	  All input/output value (must) match the PropertyRef unit
+*/
+
+
+mExpClass(uiTools) uiPropertyValFld : public uiGroup
+{
+public:
+
+			uiPropertyValFld(uiParent*,const PropertyRef&,
+					 float defval);
+			~uiPropertyValFld();
+
+    float		getValue() const;
+    void		setValue(float val);
+			//!< using
+    const char*		getUnitName() const;
+    const UnitOfMeasure* getUnit() const;
+    void		setUnit(const UnitOfMeasure* uom=nullptr);
+    mDeprecatedDef
+    void		setUnitName(const char*);
+
+    void		setReadOnly(bool); //!< will still allow unit selection
+    const char*		propName() const;
+
+    Notifier<uiPropertyValFld> valueChanged;
+
+protected:
+
+    const UnitOfMeasure* pruom_;
+    uiGenInput*		valfld_;
+    uiUnitSel*		unfld_;
+    mutable float	lastsetvalue_;
+
+    void		handleValChg(float,bool) const;
+
+    void		valChg(CallBacker*);
+    void		unChg(CallBacker*);
+
+};

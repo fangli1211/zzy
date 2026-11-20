@@ -1,0 +1,253 @@
+/*+
+________________________________________________________________________
+
+ Copyright:	(C) 1995-2022 dGB Beheer B.V.
+ License:	https://dgbes.com/licensing
+________________________________________________________________________
+
+-*/
+
+#include "posimpexppars.h"
+
+#include "genc.h"
+#include "ioman.h"
+#include "iopar.h"
+#include "keystrs.h"
+#include "perthreadrepos.h"
+#include "survinfo.h"
+
+
+const char* PosImpExpPars::sKeyOffset()		{ return sKey::Offset(); }
+const char* PosImpExpPars::sKeyScale()		{ return sKey::Scale(); }
+const char* PosImpExpPars::sKeyTrcNr()		{ return sKey::TraceNr(); }
+
+
+const PosImpExpPars& PosImpExpPars::SVY()
+{
+    static PtrMan<PosImpExpPars> thinst = new PosImpExpPars();
+    return *thinst.ptr();
+}
+
+PosImpExpPars& PosImpExpPars::getSVY()
+{
+    return const_cast<PosImpExpPars&>( SVY() );
+}
+
+
+PosImpExpPars::PosImpExpPars()
+    : CallBacker()
+    , binidoffs_(BinID::noStepout())
+    , coordoffs_(0.,0.)
+{
+    if ( !NeedDataBase() )
+	return;
+
+    if ( IOMan::isOK() )
+	iomReadyCB( nullptr );
+    else
+	mAttachCB( IOMan::iomReady(), PosImpExpPars::iomReadyCB );
+}
+
+
+PosImpExpPars::~PosImpExpPars()
+{
+    detachAllNotifiers();
+}
+
+
+void PosImpExpPars::iomReadyCB( CallBacker* )
+{
+    mAttachCB( IOM().afterSurveyChange, PosImpExpPars::survChg );
+    survChg( nullptr );
+}
+
+
+void PosImpExpPars::getFromSI()
+{
+    clear();
+    if ( IOMan::isOK() )
+	usePar( SI().pars() );
+}
+
+
+const char* PosImpExpPars::fullKey( const char* attr, bool scl )
+{
+    mDeclStaticString( ret );
+    ret = IOPar::compKey( sKeyBase(), attr );
+    ret = IOPar::compKey( ret.buf(), scl ? sKeyScale() : sKeyOffset() );
+    return ret.buf();
+}
+
+
+void PosImpExpPars::usePar( const IOPar& iop )
+{
+    iop.get( fullKey(sKeyBinID(),true), binidscale_ );
+    iop.get( fullKey(sKeyBinID(),false), binidoffs_ );
+    iop.get( fullKey(sKeyTrcNr(),true), trcnrscale_ );
+    iop.get( fullKey(sKeyTrcNr(),false), trcnroffs_ );
+    iop.get( fullKey(sKeyCoord(),true), coordscale_ );
+    iop.get( fullKey(sKeyCoord(),false), coordoffs_ );
+    iop.get( fullKey(sKeyZ(),true), zscale_ );
+    iop.get( fullKey(sKeyZ(),false), zoffs_ );
+    iop.get( fullKey(sKeyOffset(),true), offsscale_ );
+    iop.get( fullKey(sKeyOffset(),false), offsoffs_ );
+}
+
+
+#define mChkUdf(v) if ( mIsUdf(v) ) return
+
+
+void PosImpExpPars::adjustBinID( BinID& bid, bool inw ) const
+{
+    mChkUdf(bid.inl()); mChkUdf(bid.crl());
+    if ( inw )
+    {
+	bid.inl() *= binidscale_; bid.crl() *= binidscale_;
+	bid += binidoffs_;
+    }
+    else
+    {
+	bid -= binidoffs_;
+	bid.inl() /= binidscale_; bid.crl() /= binidscale_;
+    }
+}
+
+
+void PosImpExpPars::adjustTrcNr( int& tnr, bool inw ) const
+{
+    mChkUdf(tnr);
+    if ( inw )
+	{ tnr *= trcnrscale_; tnr += trcnroffs_; }
+    else
+	{ tnr -= trcnroffs_; tnr /= trcnrscale_; }
+}
+
+
+void PosImpExpPars::adjustCoord( Coord& crd, bool inw ) const
+{
+    mChkUdf(crd.x_); mChkUdf(crd.y_);
+    if ( inw )
+    {
+        crd.x_ *= coordscale_; crd.y_ *= coordscale_;
+	crd += coordoffs_;
+    }
+    else
+    {
+	crd -= coordoffs_;
+        crd.x_ /= coordscale_; crd.y_ /= coordscale_;
+    }
+}
+
+
+void PosImpExpPars::adjustZ( float& z, bool inw ) const
+{
+    mChkUdf(z);
+    if ( inw )
+	{ z *= zscale_; z += zoffs_; }
+    else
+	{ z -= zoffs_; z /= zscale_; }
+}
+
+
+void PosImpExpPars::adjustOffset( float& offs, bool inw ) const
+{
+    mChkUdf(offs);
+    if ( inw )
+	{ offs *= offsscale_; offs += offsoffs_; }
+    else
+	{ offs -= offsoffs_; offs /= offsscale_; }
+}
+
+
+void PosImpExpPars::adjustInl( int& inl, bool inw ) const
+{
+    mChkUdf(inl);
+    if ( inw )
+	{ inl *= binidscale_; inl += binidoffs_.inl(); }
+    else
+	{ inl -= binidoffs_.inl(); inl /= binidscale_; }
+}
+
+
+void PosImpExpPars::adjustCrl( int& crl, bool inw ) const
+{
+    mChkUdf(crl);
+    if ( inw )
+	{ crl *= binidscale_; crl += binidoffs_.crl(); }
+    else
+	{ crl -= binidoffs_.crl(); crl /= binidscale_; }
+}
+
+
+void PosImpExpPars::adjustX( double& x, bool inw ) const
+{
+    mChkUdf(x);
+    if ( inw )
+    { x *= coordscale_; x += coordoffs_.x_; }
+    else
+    { x -= coordoffs_.x_; x /= coordscale_; }
+}
+
+
+void PosImpExpPars::adjustY( double& y, bool inw ) const
+{
+    mChkUdf(y);
+    if ( inw )
+    { y *= coordscale_; y += coordoffs_.y_; }
+    else
+    { y -= coordoffs_.y_; y /= coordscale_; }
+}
+
+
+bool PosImpExpPars::haveBinIDChg() const
+{
+    return binidscale_ != 1 || binidoffs_.inl() != 0 || binidoffs_.crl() != 0;
+}
+
+
+bool PosImpExpPars::haveCoordChg() const
+{
+    return haveXChg() || haveYChg();
+}
+
+
+bool PosImpExpPars::haveTrcNrChg() const
+{
+    return trcnrscale_ != 1 || trcnroffs_ != 0;
+}
+
+
+bool PosImpExpPars::haveZChg() const
+{
+    return !mIsZero(zscale_-1,1e-6) || !mIsZero(zoffs_,1e-6);
+}
+
+
+bool PosImpExpPars::haveOffsetChg() const
+{
+    return !mIsZero(offsscale_-1,1e-6) || !mIsZero(offsoffs_,1e-6);
+}
+
+
+bool PosImpExpPars::haveInlChg() const
+{
+    return binidscale_ != 1 || binidoffs_.inl() != 0;
+}
+
+
+bool PosImpExpPars::haveCrlChg() const
+{
+    return binidscale_ != 1 || binidoffs_.crl() != 0;
+}
+
+
+bool PosImpExpPars::haveXChg() const
+{
+    return !mIsZero(coordscale_-1,1e-6) || !mIsZero(coordoffs_.x_,1e-6);
+}
+
+
+bool PosImpExpPars::haveYChg() const
+{
+    return !mIsZero(coordscale_-1,1e-6) || !mIsZero(coordoffs_.y_,1e-6);
+}

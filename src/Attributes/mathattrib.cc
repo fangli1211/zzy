@@ -1,0 +1,310 @@
+/*+
+________________________________________________________________________
+
+ Copyright:	(C) 1995-2022 dGB Beheer B.V.
+ License:	https://dgbes.com/licensing
+________________________________________________________________________
+
+-*/
+
+#include "mathattrib.h"
+
+#include "attribdataholder.h"
+#include "attribdesc.h"
+#include "attribfactory.h"
+#include "attribparam.h"
+#include "attribparamgroup.h"
+#include "mathformula.h"
+#include "mathspecvars.h"
+#include "separstr.h"
+#include "survinfo.h"
+
+namespace Attrib
+{
+
+const Math::SpecVarSet& Mathematics::getSpecVars()
+{
+    mDefineStaticLocalObject( Math::SpecVarSet, svs, );
+
+    if ( svs.isEmpty() )
+    {
+	svs.add( "DZ", "Z Step" );
+	svs.add( "Inl", "Inline number" );
+	svs.add( "Crl", "Crossline number" );
+	svs.add( "ZIndex", "Z Index" );
+	svs.add( "XCoord", "X Coordinate" );
+	svs.add( "YCoord", "Y Coordinate" );
+	svs.add( "Z", "Z" );
+	svs.add( "LineNr", "Line number" );
+	svs.add( "TrcNr", "Trace number" );
+    }
+
+    return svs;
+}
+
+mAttrDefCreateInstance(Mathematics)
+
+
+void Mathematics::initClass()
+{
+    mAttrStartInitClassWithUpdate
+
+    desc->addParam( new StringParam(expressionStr()) );
+
+    DoubleParam cst( cstStr() );
+    ParamGroup<DoubleParam>* cstset =
+			new ParamGroup<DoubleParam>( 0, cstStr(), cst );
+    desc->addParam( cstset );
+
+    desc->addParam( new StringParam(recstartvalsStr(), 0, false) );
+
+    desc->addInput( InputSpec("Data",true) );
+    desc->addOutputDataType( Seis::UnknowData );
+
+    desc->setLocality( Desc::SingleTrace );
+    mAttrEndInitClass
+}
+
+
+void Mathematics::updateDesc( Desc& desc )
+{
+    ValParam* expr = desc.getValParam( expressionStr() );
+    if ( !expr ) return;
+
+    Math::Formula formula( true,Mathematics::getSpecVars() );
+    formula.setText( expr->getStringValue() );
+    if ( formula.isBad() ) return;
+
+    bool foundcst = false;
+    BufferStringSet inpnms;
+    for ( int idx=0; idx<formula.nrInputs(); idx++ )
+    {
+	if ( formula.isConst(idx) )
+	    foundcst = true;
+	else if ( !formula.isSpec(idx) )
+	    inpnms.addIfNew( formula.variableName(idx) );
+    }
+
+    if ( desc.nrInputs() != inpnms.size() )
+    {
+	while ( desc.nrInputs() )
+	    desc.removeInput(0);
+
+	for ( int idx=0; idx<inpnms.size(); idx++ )
+	    desc.addInput( InputSpec( inpnms.get( idx ), true ) );
+    }
+
+    desc.setParamEnabled( cstStr(), foundcst );
+    desc.setParamEnabled( recstartvalsStr(), formula.isRecursive() );
+}
+
+
+Mathematics::Mathematics( Desc& dsc )
+    : Provider( dsc )
+    , formula_(0)
+    , desintv_( Interval<float>(0,0) )
+    , reqintv_( Interval<int>(0,0) )
+{
+    if ( !isOK() )
+	return;
+
+    inputdata_.allowNull(true);
+
+    //Called expression for backward compatibility, it is now a Math::Formula
+    ValParam* form = dsc.getValParam( expressionStr() );
+    if ( !form )
+	return;
+
+    formula_ = new Math::Formula( true, Mathematics::getSpecVars() );
+    formula_->setText( form->getStringValue() );
+    if ( formula_->isBad() )
+    {
+	errmsg_ = formula_->errMsg();
+	return;
+    }
+
+    int curinpidx = 0;
+    TypeSet<int> inputsalreadyused;
+    mDescGetParamGroup(DoubleParam,cstset,dsc,cstStr())
+    for ( int idx=0; idx<cstset->size(); idx++ )
+    {
+	const ValParam& param = (ValParam&)(*cstset)[idx];
+	for ( int iinp=curinpidx; iinp<formula_->nrInputs(); iinp++ )
+	{
+	    if ( inputsalreadyused.isPresent(iinp) ) continue;
+	    if ( formula_->isConst(iinp) )
+	    {
+		formula_->setInputDef( iinp, toString(param.getDValue()) );
+		inputsalreadyused += iinp;
+		curinpidx++;
+		break;
+	    }
+	}
+    }
+
+    if ( formula_->isRecursive() )
+    {
+	SeparString recstartstr;
+	mGetString( recstartstr, recstartvalsStr() );
+	const int nrvals = recstartstr.size();
+	for ( int idx=0; idx<nrvals; idx++ )
+	{
+	    double val = toDouble( recstartstr[idx] );
+	    if ( mIsUdf(val) )
+		break;
+	    formula_->recStartVals()[idx] = val;
+	}
+
+        desintv_.start_ = -1000;	//ensure we get the entire trace beginning
+    }
+}
+
+
+Mathematics::~Mathematics()
+{}
+
+
+bool Mathematics::allowParallelComputation() const
+{
+    return !formula_->isRecursive();
+}
+
+
+bool Mathematics::getInputOutput( int input, TypeSet<int>& res ) const
+{
+    return Provider::getInputOutput( input, res );
+}
+
+
+bool Mathematics::getInputData( const BinID& relpos, int zintv )
+{
+    int nrinputs = formula_->nrExternalInputs();
+    while ( inputdata_.size() < nrinputs )
+    {
+	inputdata_ += 0;
+	inputidxs_ += -1;
+    }
+
+    for ( int varidx=0; varidx<nrinputs; varidx++ )
+    {
+	const DataHolder* data = inputs_[varidx]->getData( relpos, zintv );
+	if ( !data ) return false;
+
+	inputdata_.replace( varidx, data );
+	inputidxs_[varidx] = getDataIndex( varidx );
+    }
+
+    return true;
+}
+
+
+bool Mathematics::computeData( const DataHolder& output,
+				       const BinID& relpos, int z0,
+				       int nrsamples, int threadid ) const
+{
+    PtrMan< ::Math::Formula > mathobj
+		= formula_ ? new ::Math::Formula(*formula_) : nullptr;
+    if ( !mathobj ) return false;
+
+    mathobj->startNewSeries();
+
+    for ( int idx=0; idx<nrsamples; idx++ )
+    {
+	TypeSet<double> inpvals;
+	int nrconstsandspecsfound = 0;
+	for ( int inpidx=0; inpidx<formula_->nrInputs(); inpidx++ )
+	{
+	    if ( formula_->isConst(inpidx) )
+	    {
+		inpvals += formula_->getConstVal( inpidx );
+		nrconstsandspecsfound ++;
+		continue;
+	    }
+
+	    const int specidx = formula_->specIdx( inpidx );
+	    switch ( formula_->specIdx(inpidx) )
+	    {
+		case 0: inpvals += sCast( double, refstep_ ); break;
+		case 1: inpvals += sCast( double, getInl() ); break;
+		case 2: inpvals += sCast( double, getCrl() ); break;
+		case 3: inpvals += sCast( double, (z0+idx) ); break;
+                case 4: inpvals += getCurrentCoord().x_; break;
+                case 5: inpvals += getCurrentCoord().y_; break;
+		case 6: inpvals += sCast( double,(z0+idx)*refstep_ ); break;
+		case 7: inpvals += sCast( double, currentbid_.lineNr() ); break;
+		case 8: inpvals += sCast( double, currentbid_.trcNr() ); break;
+	    }
+	    if ( specidx >=0 )
+	    {
+		nrconstsandspecsfound ++;
+		continue;
+	    }
+
+	    const TypeSet<int>& reqshifts = formula_->getShifts( inpidx );
+	    for ( int ishft=0; ishft<reqshifts.size(); ishft++ )
+	    {
+		const int inpdataidx = inpidx-nrconstsandspecsfound;
+		const DataHolder* inpdh = inputdata_[inpdataidx];
+		inpvals += inpdh ? sCast( double, getInputValue( *inpdh,
+						  inputidxs_[inpdataidx],
+						  idx+reqshifts[ishft],z0 ) )
+				 : mUdf(double);
+	    }
+	}
+
+	double result = mathobj->getValue( inpvals.arr() );
+	if ( !Math::IsNormalNumber(result) )
+	    result = mUdf(double);
+
+	setOutputValue( output, 0, idx, z0, float(result) );
+    }
+
+    return true;
+}
+
+
+int Mathematics::getInl() const
+{
+    return is2D() ? SI().transform( getCurrentCoord() ).inl()
+		  : currentbid_.inl();
+}
+
+
+int Mathematics::getCrl() const
+{
+    return is2D() ? SI().transform( getCurrentCoord() ).crl()
+		  : currentbid_.crl();
+}
+
+
+const Interval<int>* Mathematics::reqZSampMargin( int inp, int ) const
+{
+    //Trick: as call to this function is not multithreaded
+    //we use a single address for reqintv_ which will be reset for every input
+    const_cast< Interval<int>* >(&reqintv_)->set(0,0);
+    int datainpidx = -1;
+    bool found = false;
+    for ( int idx=0; idx<formula_->nrInputs(); idx++ )
+    {
+	if ( !formula_->isConst(idx) && !formula_->isSpec(idx) )
+	{
+	    datainpidx++;
+	    if ( datainpidx == inp )
+	    {
+		found = true;
+		const_cast< Interval<int>* >
+		    (&reqintv_)->include( formula_->shiftRange( inp ) );
+	    }
+	 }
+    }
+
+    return found ? &reqintv_ : 0;
+}
+
+
+const Interval<float>* Mathematics::desZMargin( int inp, int ) const
+{
+    return &desintv_;
+}
+
+} // namespace Attrib

@@ -1,0 +1,149 @@
+dTect V7.1.0
+Properties
+Fri 28 Apr 2023, 08:00:00
+!
+Name: Density
+Mnemonic: RHOB
+Color: 0`0`200
+Range: 2.2`2.8`g/cc
+!
+Name: Pwave velocity
+Mnemonic: PVEL
+DefaultValue: Value`2000`m/s
+Range: 1500`4500`m/s
+!
+Name: Swave velocity
+Mnemonic: SVEL
+Color: 0`255`0
+DefaultValue: Value`1400`m/s
+Range: 500`2000`m/s
+!
+Name: Porosity
+Mnemonic: PHI
+Aliases: Phi`Por`PIGN
+DefaultValue: Value`10`%
+Range: 0`30`%
+!
+Name: Permeability
+Mnemonic: PERM
+Range: 1`500`mD
+!
+Name: Gamma Ray
+Mnemonic: GR
+!
+Name: Temperature
+Mnemonic: TEMP
+Range: 0`200`deg.C
+!
+Name: Pressure
+Mnemonic: PP
+!
+Name: Sonic
+Mnemonic: DT
+Range: 40`140`us/ft
+!
+Name: Shear Sonic
+Mnemonic: DTS
+Range: 40`240`us/ft
+!
+Name: Acoustic Impedance
+Mnemonic: AI
+Definition: Formula: +## [Input.1.Def] ## [Density] ##.+## [Output.Unit] ## [m/s x kg/m3] ##.+## [Output.Mnemonic] ## [AI] ##.+## [Description] ## [Compute acoustic impedance from P-wave velocity and density] ##.+## [Input.0.Mnemonic] ## [PVEL] ##.+## [Name] ## [Acoustic Impedance from P-wave velocity] ##.+## [Input.1.Mnemonic] ## [RHOB] ##.+## [Input.0.Unit] ## [m/s] ##.+## [Expression] ## [velp * den] ##.+## [Input.1.Unit] ## [kg/m3] ##.+## [Input.0.Def] ## [Pwave velocity] ##.
+Range: 2000`20000`m/s x g/cc
+!
+Name: Elastic Impedance
+Mnemonic: EI
+Range: 2000`20000`m/s x g/cc
+!
+Name: Shear Impedance
+Mnemonic: SI
+Definition: Formula: +## [Input.1.Def] ## [Density] ##.+## [Output.Unit] ## [m/s x kg/m3] ##.+## [Output.Mnemonic] ## [SI] ##.+## [Description] ## [Compute shear impedance from S-wave velocity and density] ##.+## [Input.0.Mnemonic] ## [SVEL] ##.+## [Name] ## [Shear Impedance from S-wave velocity] ##.+## [Input.1.Mnemonic] ## [RHOB] ##.+## [Input.0.Unit] ## [m/s] ##.+## [Expression] ## [vels * den] ##.+## [Input.1.Unit] ## [kg/m3] ##.+## [Input.0.Def] ## [Swave velocity] ##.
+Range: 2000`20000`m/s x g/cc
+!
+Name: Water Saturation
+Mnemonic: SW
+Color: 0`200`255
+DefaultValue: Value`100`%
+!
+Name: Spontaneous Potential
+Mnemonic: SP
+Color: 255`100`0
+!
+Name: Resistivity
+Mnemonic: RT
+!
+Name: Poissons Ratio
+Mnemonic: PR
+Definition: Formula: +## [Input.1.Def] ## [Swave velocity] ##.+## [Output.Unit] ## [Ratio] ##.+## [Output.Mnemonic] ## [PR] ##.+## [Description] ## [Poisson's ratio] ##.+## [Input.0.Mnemonic] ## [PVEL] ##.+## [Name] ## [Poisson's ratio from Velocity logs] ##.+## [Input.1.Mnemonic] ## [SVEL] ##.+## [Input.0.Unit] ## [m/s] ##.+## [Expression] ## [( (velp/vels)^2 - 2 ) / ( 2* ( (velp/vels)^2 - 1 ) )] ##.+## [Input.1.Unit] ## [m/s] ##.+## [Input.0.Def] ## [Pwave velocity] ##.
+!
+Name: Vp/Vs
+Mnemonic: VPVS
+Definition: Formula: +## [Input.1.Def] ## [Swave velocity] ##.+## [Output.Unit] ## [Ratio] ##.+## [Output.Mnemonic] ## [VPVS] ##.+## [Description] ## [Vp/Vs ratio] ##.+## [Input.0.Mnemonic] ## [PVEL] ##.+## [Name] ## [Vp/Vs ratio from Velocity curves] ##.+## [Input.1.Mnemonic] ## [SVEL] ##.+## [Input.0.Unit] ## [m/s] ##.+## [Expression] ## [velp / vels] ##.+## [Input.1.Unit] ## [m/s] ##.+## [Input.0.Def] ## [Pwave velocity] ##.
+Color: 200`150`200
+!
+Name: Vs/Vp
+Mnemonic: VSVP
+Definition: Formula: +## [Input.1.Def] ## [Pwave velocity] ##.+## [Output.Unit] ## [Ratio] ##.+## [Output.Mnemonic] ## [VSVP] ##.+## [Description] ## [Vs/Vp ratio] ##.+## [Input.0.Mnemonic] ## [SVEL] ##.+## [Name] ## [Vs/Vp ratio from Velocity curves] ##.+## [Input.1.Mnemonic] ## [PVEL] ##.+## [Input.0.Unit] ## [m/s] ##.+## [Expression] ## [vels / velp] ##.+## [Input.1.Unit] ## [m/s] ##.+## [Input.0.Def] ## [Swave velocity] ##.
+Color: 200`150`150
+!
+Name: LambdaRho
+Mnemonic: LR
+Definition: Formula: +## [Input.1.Def] ## [2] ##.+## [Output.Unit] ## [Pa.Kg/m3] ##.+## [Output.Mnemonic] ## [LR] ##.+## [Description] ## [Lambda-Rho from Ip-Is] ##.+## [Input.0.Mnemonic] ## [AI] ##.+## [Name] ## [Lambda-Rho] ##.+## [Input.2.Mnemonic] ## [SI] ##.+## [Input.2.Def] ## [Shear Impedance] ##.+## [Input.0.Unit] ## [m/s x kg/m3] ##.+## [Expression] ## [Ip^2 - c0*Is^2] ##.+## [Input.1.Unit] ## [] ##.+## [Input.0.Def] ## [Acoustic Impedance] ##.+## [Input.2.Unit] ## [m/s x kg/m3] ##.
+!
+Name: MuRho
+Mnemonic: MR
+Definition: Formula: +## [Output.Unit] ## [Pa.Kg/m3] ##.+## [Output.Mnemonic] ## [MR] ##.+## [Description] ## [Mhu-Rho from Is] ##.+## [Input.0.Mnemonic] ## [SI] ##.+## [Name] ## [Mhu-Rho] ##.+## [Input.0.Unit] ## [m/s x kg/m3] ##.+## [Expression] ## [Is^2] ##.+## [Input.0.Def] ## [Shear Impedance] ##.
+!
+Name: Compressibility
+Mnemonic: CB
+Color: 100`200`100
+!
+Name: Vshale
+Mnemonic: VSH
+Aliases: VSH`Volume of Shale
+DefaultValue: Value`100`%
+!
+Name: Delta
+Mnemonic: DEL
+DefaultValue: Value`0`Ratio
+Range: -1`1`Ratio
+!
+Name: Epsilon
+Mnemonic: EPS
+DefaultValue: Value`0`Ratio
+Range: -1`1`Ratio
+!
+Name: Eta
+Mnemonic: ETA
+DefaultValue: Value`0`Ratio
+Range: -1`1`Ratio
+!
+Name: NetPay
+Mnemonic: NET_PAY_FLAG
+Aliases: Net Pay Flag
+DefaultValue: Value`0
+!
+Name: Reservoir
+Mnemonic: NET_FLAG
+Aliases: Net Flag
+Color: 255`0`255
+DefaultValue: Value`0
+!
+Name: Litho
+Mnemonic: LITHO
+DefaultValue: Value`1
+!
+Name: Fracture Density
+Mnemonic: FRACRHO
+DefaultValue: Value`0`Fraction
+!
+Name: Fracture Orientation
+Mnemonic: FRACSTRIKE
+DefaultValue: Value`0`deg
+!
+Name: Brittleness
+Mnemonic: BI
+!
+Name: TOC
+Mnemonic: TOC
+!

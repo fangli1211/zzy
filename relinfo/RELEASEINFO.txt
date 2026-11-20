@@ -1,0 +1,14 @@
+OpendTect main release info
+
+Build platforms/distributions:
+
+Windows : Windows 11 Pro (23H2)
+Linux   : Rocky Linux release 8.10, kernel 4.18.0-553.123.1
+macOS   : macOS 14.2.1 (Sonoma)
+
+
+Compiler:
+
+Windows : Visual Studio 2026 Professional (version 18.11.3, toolset 17.44)
+Linux   : gcc/g++ toolset toolchain 13.3.1, compatible with libstdc++.so.6.0.25 (GCC 8.5.0)
+macOS   : clang15 (XCode 15.4, deployment version 12.0)
