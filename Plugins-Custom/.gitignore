@@ -1,0 +1,13 @@
+# 构建产物 / 本地临时文件（.qm 由 CMake + lrelease 在 build 树里生成）
+*.qm
+*.obj
+*.pdb
+*.exp
+build/
+_build/
+
+# 编辑器 / 系统
+.vscode/
+.idea/
+Thumbs.db
+desktop.ini
