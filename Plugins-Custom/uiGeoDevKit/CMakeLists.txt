@@ -11,7 +11,8 @@
 #  5. 翻译单独使用 "geodevkit" 包名，避免改动官方 od_zh_CN.qm。
 #________________________________________________________________________
 
-set( OD_MODULE_DEPS uiODMain uiEarthModel EarthModel Geometry uiIo )
+set( OD_MODULE_DEPS uiODMain uiEarthModel EarthModel Geometry uiIo
+                    uiBase uiFlatView Well Algo )
 set( OD_FOLDER "OD Custom Plugins" )
 set( OD_IS_PLUGIN yes )
 
@@ -19,11 +20,19 @@ set( OD_MODULE_SOURCES
     geodevkitpi.cc
     uigeodevkitinfo.cc
     uigeodevkitintersect.cc
+    geodevkitdxf.cc
+    uigeodevkitexport.cc
+    uigeodevkitt2d.cc
+    uigeodevkitcontour.cc
 )
 
 set( OD_MODULE_INCFILES
     uigeodevkitinfo.h
     uigeodevkitintersect.h
+    geodevkitdxf.h
+    uigeodevkitexport.h
+    uigeodevkitt2d.h
+    uigeodevkitcontour.h
 )
 
 set( OD_PLUGIN_ALO_EXEC ${OD_MAIN_EXEC} )

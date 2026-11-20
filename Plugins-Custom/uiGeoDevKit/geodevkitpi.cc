@@ -28,6 +28,9 @@ ________________________________________________________________________
 
 #include "uigeodevkitinfo.h"
 #include "uigeodevkitintersect.h"
+#include "uigeodevkitexport.h"
+#include "uigeodevkitcontour.h"
+#include "uigeodevkitt2d.h"
 
 #include "callback.h"
 #include "odplugin.h"
@@ -37,6 +40,18 @@ ________________________________________________________________________
 #include "uiodmain.h"
 #include "uiodmenumgr.h"
 #include "uistring.h"
+#include "uifiledlg.h"
+#include "uigraphicsscene.h"
+#include "uigraphicsviewbase.h"
+#include "uigraphicsview.h"
+#include "uiflatviewer.h"
+#include "uiflatviewwin.h"
+#include "uiodviewer2d.h"
+#include "uiodviewer2dmgr.h"
+#include "oddirs.h"
+#include "bufstringset.h"
+#include "survgeom.h"
+#include "posgeomid.h"
 
 
 mDefODPluginInfo(uiGeoDevKit)
@@ -68,6 +83,10 @@ private:
 
     void		showInfoDlg(CallBacker*);
     void		showIntersectDlg(CallBacker*);
+    void		showExportDlg(CallBacker*);
+    void		showContourDlg(CallBacker*);
+    void		showT2DDlg(CallBacker*);
+    void		exportSection(CallBacker*);
     void		showAbout(CallBacker*);
 };
 
@@ -90,6 +109,18 @@ void uiGeoDevKitMgr::dTectMenuChanged()
 		tr("Fault-Horizon Intersection..."),
 		mCB(this,uiGeoDevKitMgr,showIntersectDlg) ) );
     mnu->insertAction( new uiAction(
+		tr("Interpretation Export Center..."),
+		mCB(this,uiGeoDevKitMgr,showExportDlg) ) );
+    mnu->insertAction( new uiAction(
+		tr("Contour Map Export..."),
+		mCB(this,uiGeoDevKitMgr,showContourDlg) ) );
+    mnu->insertAction( new uiAction(
+		tr("Time-Depth Conversion Wizard..."),
+		mCB(this,uiGeoDevKitMgr,showT2DDlg) ) );
+    mnu->insertAction( new uiAction(
+		tr("Export 2D Section Image..."),
+		mCB(this,uiGeoDevKitMgr,exportSection) ) );
+    mnu->insertAction( new uiAction(
 		tr("About This Toolkit..."),
 		mCB(this,uiGeoDevKitMgr,showAbout) ) );
 
@@ -109,6 +140,70 @@ void uiGeoDevKitMgr::showIntersectDlg( CallBacker* )
 {
     uiGeoDevKitIntersectDlg dlg( &appl() );
     dlg.go();
+}
+
+
+void uiGeoDevKitMgr::showExportDlg( CallBacker* )
+{
+    uiGeoDevKitExportDlg dlg( &appl() );
+    dlg.go();
+}
+
+
+void uiGeoDevKitMgr::showContourDlg( CallBacker* )
+{
+    uiGeoDevKitContourDlg dlg( &appl() );
+    dlg.go();
+}
+
+
+void uiGeoDevKitMgr::showT2DDlg( CallBacker* )
+{
+    uiGeoDevKitT2DDlg dlg( &appl() );
+    dlg.go();
+}
+
+
+void uiGeoDevKitMgr::exportSection( CallBacker* )
+{
+    // 导出当前打开的 2D 剖面视图为 PNG。OpendTect 把层位/断层的叠加显示
+    // 都渲染进 rgbCanvas().scene()，因此 saveAsImage 得到的图就是所见即所得
+    // 的剖面，无需自己重画数据。
+    if ( !appl().viewer2DMgrAvailable() ||
+	 appl().viewer2DMgr().nr2DViewers()<1 )
+    {
+	uiMSG().message( tr("No 2D section viewer is open. Open a seismic "
+			    "line in a 2D window first.") );
+	return;
+    }
+
+    uiODViewer2D* vwr = nullptr;
+    BufferStringSet lnm;
+    TypeSet<Pos::GeomID> geomids;
+    Survey::GM().getList( lnm, geomids, true );
+    for ( int idx=0; idx<geomids.size(); idx++ )
+    {
+	vwr = appl().viewer2DMgr().find2DViewer( geomids[idx] );
+	if ( vwr )
+	    break;
+    }
+    if ( !vwr || !vwr->viewwin() || !vwr->viewwin()->nrViewers() )
+    {
+	uiMSG().message( tr("The open section has no renderable view.") );
+	return;
+    }
+
+    BufferString deffnm( "section_" );
+    deffnm.add( GetSurveyName() ).add( ".png" );
+    uiFileDialog dlg( &appl(), false, GetProcFileName(deffnm.buf()),
+		      "*.png", tr("Export 2D section as PNG") );
+    if ( !dlg.go() )
+	return;
+
+    uiFlatViewer& flatvwr = vwr->viewwin()->viewer( 0 );
+    uiGraphicsScene& scene = flatvwr.rgbCanvas().scene();
+    scene.saveAsImage( dlg.fileName(), 1200, 800, 150 );
+    uiMSG().message( tr("Section image exported successfully.") );
 }
 
 

@@ -18,8 +18,12 @@ Plugins-Custom/
     ├── CMakeLists.txt              # 模块依赖、源码显式枚举、翻译生成与安装
     ├── geodevkitpi.cc              # 插件入口、菜单注入、生命周期
     ├── uigeodevkitinfo.h/.cc       # 工区与运行环境自检对话框（P0）
-    ├── uigeodevkitintersect.h/.cc  # 断层—层位交线提取（P2 首个落地功能）
-    └── geodevkit_zh_CN.ts          # 独立中文翻译源（28 条，lrelease 生成 .qm）
+    ├── uigeodevkitintersect.h/.cc  # 断层—层位交线提取（P2）
+    ├── geodevkitdxf.h/.cc          # ASCII DXF R12 写出引擎（P2 · ioDXF）
+    ├── uigeodevkitexport.h/.cc     # 成果导出中心：层位/断层/交线/井/测线 → DXF/ASCII（P2）
+    ├── uigeodevkitcontour.h/.cc    # 等值线成图导出：IsoContourTracer → DXF（P2）
+    ├── uigeodevkitt2d.h/.cc        # 时深转换向导（封装官方对话框，P2）
+    └── geodevkit_zh_CN.ts          # 独立中文翻译源（114 条，lrelease 生成 .qm）
 ```
 
 ## 已实现功能
@@ -31,7 +35,18 @@ Plugins-Custom/
    - 复用内核 `Geometry::FaultBinIDSurfaceIntersector` 计算交线；
    - 结果按点序显示 X/Y/Z，可导出带注释头的 ASCII 文件（制表符分隔）；
    - F3 Demo 2023 里可用 `Surfaces/Demo_*.hor` 与 `Surfaces/Fault_A.flt` 实测。
-4. 自带独立中文翻译包 `geodevkit_zh_CN.qm`，**不改动官方 `od_zh_CN.qm`**，切英文界面自动回退英文原文。
+4. **成果导出中心**（P2）：
+   - 层位（`.hor`）→ 逐 Inline 折线；断层（`.flt`）→ 逐断层棍折线；
+   - 交线（层位+断层+垂向偏移）→ 折线，复用内核求交算法；
+   - 井 → 井口点 + 井轨迹折线；二维测线 → 平面折线 + 线名标注；
+   - 统一可选 **DXF（AutoCAD R12）** 或 **ASCII（X Y Z 表）**，图层命名 `HORIZON_*` / `FAULT_*` / `INTERSECTION_*` / `WELL_*` / `SURVEY_LINE`；
+   - 全部几何读取走公开 EM/Survey API，DXF 格式化集中在 `geodevkitdxf.{h,cc}`；
+5. **等值线成图导出**（P2）：选三维层位 + 首条/等值距/末条等值线（限 1–500 级），复用内核 `IsoContourTracer`，每条等值线按 `CONTOUR_<level>` 分层输出 DXF，可叠加断层参照线；注释说明了「断层内不画等高线」的 polygon 裁剪待甲方 D6/D8 确认后启用；
+6. **时深转换向导**（P2）：中文 5 步引导 + `canTransform()` 预检，一键打开官方 `EM::uiTime2DepthDlg`（转换引擎仍用内核 `SurfaceT2DTransformer`，不重复造轮子）；
+7. **导出二维剖面图片**（P2）：把当前打开的 2D 剖面视图（`uiGraphicsScene`，含层位/断层叠加）导出为 1200×800 PNG；
+8. 自带独立中文翻译包 `geodevkit_zh_CN.qm`（114 条），**不改动官方 `od_zh_CN.qm`**，切英文界面自动回退英文原文。
+
+> P2 中「测线剖面矢量 DXF（沿剖面采样层位/断层）」与「统一编辑撤销/版本管理」仍为后续项：前者与 2D 视图渲染强耦合（当前以剖面 PNG 交付），后者属框架级改动，建议二期。层位自动追踪（`Horizon3DTracker`）与 viewer 数据缓存强绑定，同样留待结合具体工作流再封装。
 
 ## 快速开始（本机）
 
