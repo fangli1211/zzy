@@ -12,7 +12,7 @@
 #________________________________________________________________________
 
 set( OD_MODULE_DEPS uiODMain uiEarthModel EarthModel Geometry uiIo
-                    uiBase uiFlatView Well Algo )
+                    uiBase uiFlatView uiSeis uiTools Well Algo Seis )
 set( OD_FOLDER "OD Custom Plugins" )
 set( OD_IS_PLUGIN yes )
 
@@ -26,6 +26,8 @@ set( OD_MODULE_SOURCES
     uigeodevkitcontour.cc
     uigeodevkitbuildfault.cc
     uigeodevkitsectiondxf.cc
+    geodevkitdwt.cc
+    uigeodevkitdwt.cc
 )
 
 set( OD_MODULE_INCFILES
@@ -37,6 +39,8 @@ set( OD_MODULE_INCFILES
     uigeodevkitcontour.h
     uigeodevkitbuildfault.h
     uigeodevkitsectiondxf.h
+    geodevkitdwt.h
+    uigeodevkitdwt.h
 )
 
 set( OD_PLUGIN_ALO_EXEC ${OD_MAIN_EXEC} )

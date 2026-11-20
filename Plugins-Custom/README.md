@@ -25,6 +25,8 @@ Plugins-Custom/
     ├── uigeodevkitt2d.h/.cc        # 时深转换向导（封装官方对话框，P2）
     ├── uigeodevkitbuildfault.h/.cc # 断层棍生成断层面向导（FSS→Fault3D，P2 收尾）
     ├── uigeodevkitsectiondxf.h/.cc # 剖面矢量 DXF（Inline/Xline/2D 采样，P2 收尾）
+    ├── geodevkitdwt.h/.cc          # 自包含 DWT 引擎：23基/多级/子带MRA重构/小波域属性/多基对比（P1）
+    ├── uigeodevkitdwt.h/.cc        # 三维体 DWT 分解向导（分量体输出 + 对比报告，P1）
     └── geodevkit_zh_CN.ts          # 独立中文翻译源（lrelease 生成 .qm）
 ```
 
@@ -48,7 +50,14 @@ Plugins-Custom/
 7. **导出二维剖面图片**（P2）：把当前打开的 2D 剖面视图（`uiGraphicsScene`，含层位/断层叠加）导出为 1200×800 PNG；
 8. **断层棍生成断层面**（P2 收尾）：多选 `FaultStickSet` → 用内核 `FSStoFault3DConverter` 合并转换为一个 `Fault3D` → `saver()` 落盘；对应"多剖面拾取后一键整理、转换、保存"；
 9. **剖面矢量 DXF**（P2 收尾）：选 3D Inline / Xline / 2D 测线，采样多个层位（`Horizon3D::getZ`）与断层棍节点，输出 X=沿剖面距离、Z=层位/断层值的分层 DXF（`HORIZON_*` / `FAULT_*`）；
-10. 自带独立中文翻译包 `geodevkit_zh_CN.qm`，**不改动官方 `od_zh_CN.qm`**，切英文界面自动回退英文原文。
+10. **三维地震体小波分解**（P1 核心）：选输入 3D 体 + 23 种小波基 + 分解级数，逐道 DWT 分解，输出与输入**同网格**的 CBVS 分量体：
+    - 近似分量 `cA_J` 与各级细节 `cD_1..cD_J`（子带掩码 + 逆变换，网格不变）；
+    - 小波域属性体：近似能量、细节能量、相对细节能量、小波熵（每道标量广播到全道）；
+    - 多小波基对比报告（ASCII，抽样道数可调，输出能量/稀疏度/熵/耗时），把 D3「最优小波基」决策变成数据驱动；
+    - 引擎 `geodevkitdwt.{h,cc}` 自包含（只依赖 Algo/Basic），已用独立数值测试验证子带布局、属性计算与补零重构；
+11. 自带独立中文翻译包 `geodevkit_zh_CN.qm`，**不改动官方 `od_zh_CN.qm`**，切英文界面自动回退英文原文。
+
+> **DWT 缩放说明**：内核 `FilterWT1D::init()` 用 `sum(h²)`（多数 db/sym 基为 2）归一化低通滤波器，正变换非正交。正+逆往返能精确复现**波形形状**但有统一幅度增益（db4 约 3.2 倍）；子带隔离与相对能量不受影响，MRA 分量的绝对幅度带此已知增益。内核边界固定为 circular（周期延拓），无可选模式，界面中已明确标注。
 
 > P2 仅剩「统一编辑撤销/版本管理」为后续项（框架级改动，建议二期）。层位自动追踪（`Horizon3DTracker`）与 viewer 数据缓存强绑定，留待结合具体工作流再封装。剖面矢量 DXF 的断层部分当前只画已拾取的棍节点（不补棍段与剖面的插值交点），如需真实交点可后续接入 `FaultTrcDataProvider::getFaultZVals`。
 

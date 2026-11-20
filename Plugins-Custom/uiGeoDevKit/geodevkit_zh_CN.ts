@@ -63,6 +63,10 @@
         <source>Section image exported successfully.</source>
         <translation>剖面图片导出成功。</translation>
     </message>
+    <message>
+        <source>3D Volume DWT Decomposition...</source>
+        <translation>三维地震体小波分解...</translation>
+    </message>
 </context>
 <context>
     <name>uiGeoDevKitInfoDlg</name>
@@ -655,6 +659,113 @@
     <message>
         <source>Section DXF exported successfully.</source>
         <translation>剖面 DXF 导出成功。</translation>
+    </message>
+</context>
+<context>
+    <name>uiGeoDevKitDWTDlg</name>
+    <message>
+        <source>3D Volume DWT Decomposition</source>
+        <translation>三维地震体小波分解</translation>
+    </message>
+    <message>
+        <source>Wavelet multi-resolution decomposition with same-grid output volumes</source>
+        <translation>小波多分辨率分解，输出与输入同网格的分量体</translation>
+    </message>
+    <message>
+        <source>Input 3D seismic volume</source>
+        <translation>输入三维地震体</translation>
+    </message>
+    <message>
+        <source>Wavelet basis</source>
+        <translation>小波基</translation>
+    </message>
+    <message>
+        <source>Decomposition levels (1..L)</source>
+        <translation>分解级数（1..L）</translation>
+    </message>
+    <message>
+        <source>Output approximation cA_J</source>
+        <translation>输出近似分量 cA_J</translation>
+    </message>
+    <message>
+        <source>Output details cD_1..cD_J</source>
+        <translation>输出细节分量 cD_1..cD_J</translation>
+    </message>
+    <message>
+        <source>Output attributes (approx/detail energy, relative, entropy)</source>
+        <translation>输出小波域属性（近似/细节能量、相对细节能量、小波熵）</translation>
+    </message>
+    <message>
+        <source>Multi-wavelet comparison report</source>
+        <translation>多小波基对比报告</translation>
+    </message>
+    <message>
+        <source>Traces sampled for comparison</source>
+        <translation>对比抽样道数</translation>
+    </message>
+    <message>
+        <source>Output name prefix</source>
+        <translation>输出名称前缀</translation>
+    </message>
+    <message>
+        <source>Boundary mode: circular (kernel fixed, not configurable). Input signal length is zero-padded to a power of two internally; all output volumes keep the original grid.</source>
+        <translation>边界方式：周期延拓（内核固定，不可配置）。输入道长度在内部居中补零至 2 的幂；所有输出体保持原始网格。</translation>
+    </message>
+    <message>
+        <source>&amp;Run decomposition</source>
+        <translation>执行分解(&amp;R)</translation>
+    </message>
+    <message>
+        <source>DWT run log</source>
+        <translation>小波分解运行日志</translation>
+    </message>
+    <message>
+        <source>Please select an input 3D seismic volume.</source>
+        <translation>请选择输入三维地震体。</translation>
+    </message>
+    <message>
+        <source>Cannot open the selected input volume.</source>
+        <translation>无法打开所选输入体。</translation>
+    </message>
+    <message>
+        <source>The selected object is not a 3D seismic volume.</source>
+        <translation>所选对象不是三维地震体。</translation>
+    </message>
+    <message>
+        <source>Decomposition level must be between 1 and 12.</source>
+        <translation>分解级数必须在 1 到 12 之间。</translation>
+    </message>
+    <message>
+        <source>Select at least one output component.</source>
+        <translation>请至少选择一个输出分量。</translation>
+    </message>
+    <message>
+        <source>Starting DWT decomposition...</source>
+        <translation>开始小波分解...</translation>
+    </message>
+    <message>
+        <source>Comparison report: %1</source>
+        <translation>对比报告：%1</translation>
+    </message>
+    <message>
+        <source>Failed to write comparison report.</source>
+        <translation>写入对比报告失败。</translation>
+    </message>
+    <message>
+        <source>Failed on component: %1</source>
+        <translation>分量处理失败：%1</translation>
+    </message>
+    <message>
+        <source>Completed: %1</source>
+        <translation>已完成：%1</translation>
+    </message>
+    <message>
+        <source>DWT decomposition completed. %1 volumes written.</source>
+        <translation>小波分解完成，已写出 %1 个体。</translation>
+    </message>
+    <message>
+        <source>DWT decomposition finished with errors. See the run log.</source>
+        <translation>小波分解过程中出现错误，请查看运行日志。</translation>
     </message>
 </context>
 </TS>

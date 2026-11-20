@@ -33,6 +33,7 @@ ________________________________________________________________________
 #include "uigeodevkitt2d.h"
 #include "uigeodevkitbuildfault.h"
 #include "uigeodevkitsectiondxf.h"
+#include "uigeodevkitdwt.h"
 
 #include "callback.h"
 #include "odplugin.h"
@@ -91,6 +92,7 @@ private:
     void		exportSection(CallBacker*);
     void		showBuildFaultDlg(CallBacker*);
     void		showSectionDXFDlg(CallBacker*);
+    void		showDWTDlg(CallBacker*);
     void		showAbout(CallBacker*);
 };
 
@@ -130,6 +132,9 @@ void uiGeoDevKitMgr::dTectMenuChanged()
     mnu->insertAction( new uiAction(
 		tr("Export Section as Vector DXF..."),
 		mCB(this,uiGeoDevKitMgr,showSectionDXFDlg) ) );
+    mnu->insertAction( new uiAction(
+		tr("3D Volume DWT Decomposition..."),
+		mCB(this,uiGeoDevKitMgr,showDWTDlg) ) );
     mnu->insertAction( new uiAction(
 		tr("About This Toolkit..."),
 		mCB(this,uiGeoDevKitMgr,showAbout) ) );
@@ -227,6 +232,13 @@ void uiGeoDevKitMgr::showBuildFaultDlg( CallBacker* )
 void uiGeoDevKitMgr::showSectionDXFDlg( CallBacker* )
 {
     uiGeoDevKitSectionDXFDlg dlg( &appl() );
+    dlg.go();
+}
+
+
+void uiGeoDevKitMgr::showDWTDlg( CallBacker* )
+{
+    uiGeoDevKitDWTDlg dlg( &appl() );
     dlg.go();
 }
 
