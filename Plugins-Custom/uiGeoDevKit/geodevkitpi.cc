@@ -31,6 +31,8 @@ ________________________________________________________________________
 #include "uigeodevkitexport.h"
 #include "uigeodevkitcontour.h"
 #include "uigeodevkitt2d.h"
+#include "uigeodevkitbuildfault.h"
+#include "uigeodevkitsectiondxf.h"
 
 #include "callback.h"
 #include "odplugin.h"
@@ -87,6 +89,8 @@ private:
     void		showContourDlg(CallBacker*);
     void		showT2DDlg(CallBacker*);
     void		exportSection(CallBacker*);
+    void		showBuildFaultDlg(CallBacker*);
+    void		showSectionDXFDlg(CallBacker*);
     void		showAbout(CallBacker*);
 };
 
@@ -120,6 +124,12 @@ void uiGeoDevKitMgr::dTectMenuChanged()
     mnu->insertAction( new uiAction(
 		tr("Export 2D Section Image..."),
 		mCB(this,uiGeoDevKitMgr,exportSection) ) );
+    mnu->insertAction( new uiAction(
+		tr("Build Fault Surface from Sticks..."),
+		mCB(this,uiGeoDevKitMgr,showBuildFaultDlg) ) );
+    mnu->insertAction( new uiAction(
+		tr("Export Section as Vector DXF..."),
+		mCB(this,uiGeoDevKitMgr,showSectionDXFDlg) ) );
     mnu->insertAction( new uiAction(
 		tr("About This Toolkit..."),
 		mCB(this,uiGeoDevKitMgr,showAbout) ) );
@@ -204,6 +214,20 @@ void uiGeoDevKitMgr::exportSection( CallBacker* )
     uiGraphicsScene& scene = flatvwr.rgbCanvas().scene();
     scene.saveAsImage( dlg.fileName(), 1200, 800, 150 );
     uiMSG().message( tr("Section image exported successfully.") );
+}
+
+
+void uiGeoDevKitMgr::showBuildFaultDlg( CallBacker* )
+{
+    uiGeoDevKitBuildFaultDlg dlg( &appl() );
+    dlg.go();
+}
+
+
+void uiGeoDevKitMgr::showSectionDXFDlg( CallBacker* )
+{
+    uiGeoDevKitSectionDXFDlg dlg( &appl() );
+    dlg.go();
 }
 
 

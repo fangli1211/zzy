@@ -24,6 +24,8 @@ set( OD_MODULE_SOURCES
     uigeodevkitexport.cc
     uigeodevkitt2d.cc
     uigeodevkitcontour.cc
+    uigeodevkitbuildfault.cc
+    uigeodevkitsectiondxf.cc
 )
 
 set( OD_MODULE_INCFILES
@@ -33,6 +35,8 @@ set( OD_MODULE_INCFILES
     uigeodevkitexport.h
     uigeodevkitt2d.h
     uigeodevkitcontour.h
+    uigeodevkitbuildfault.h
+    uigeodevkitsectiondxf.h
 )
 
 set( OD_PLUGIN_ALO_EXEC ${OD_MAIN_EXEC} )

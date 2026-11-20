@@ -23,7 +23,9 @@ Plugins-Custom/
     ├── uigeodevkitexport.h/.cc     # 成果导出中心：层位/断层/交线/井/测线 → DXF/ASCII（P2）
     ├── uigeodevkitcontour.h/.cc    # 等值线成图导出：IsoContourTracer → DXF（P2）
     ├── uigeodevkitt2d.h/.cc        # 时深转换向导（封装官方对话框，P2）
-    └── geodevkit_zh_CN.ts          # 独立中文翻译源（114 条，lrelease 生成 .qm）
+    ├── uigeodevkitbuildfault.h/.cc # 断层棍生成断层面向导（FSS→Fault3D，P2 收尾）
+    ├── uigeodevkitsectiondxf.h/.cc # 剖面矢量 DXF（Inline/Xline/2D 采样，P2 收尾）
+    └── geodevkit_zh_CN.ts          # 独立中文翻译源（lrelease 生成 .qm）
 ```
 
 ## 已实现功能
@@ -44,9 +46,11 @@ Plugins-Custom/
 5. **等值线成图导出**（P2）：选三维层位 + 首条/等值距/末条等值线（限 1–500 级），复用内核 `IsoContourTracer`，每条等值线按 `CONTOUR_<level>` 分层输出 DXF，可叠加断层参照线；注释说明了「断层内不画等高线」的 polygon 裁剪待甲方 D6/D8 确认后启用；
 6. **时深转换向导**（P2）：中文 5 步引导 + `canTransform()` 预检，一键打开官方 `EM::uiTime2DepthDlg`（转换引擎仍用内核 `SurfaceT2DTransformer`，不重复造轮子）；
 7. **导出二维剖面图片**（P2）：把当前打开的 2D 剖面视图（`uiGraphicsScene`，含层位/断层叠加）导出为 1200×800 PNG；
-8. 自带独立中文翻译包 `geodevkit_zh_CN.qm`（114 条），**不改动官方 `od_zh_CN.qm`**，切英文界面自动回退英文原文。
+8. **断层棍生成断层面**（P2 收尾）：多选 `FaultStickSet` → 用内核 `FSStoFault3DConverter` 合并转换为一个 `Fault3D` → `saver()` 落盘；对应"多剖面拾取后一键整理、转换、保存"；
+9. **剖面矢量 DXF**（P2 收尾）：选 3D Inline / Xline / 2D 测线，采样多个层位（`Horizon3D::getZ`）与断层棍节点，输出 X=沿剖面距离、Z=层位/断层值的分层 DXF（`HORIZON_*` / `FAULT_*`）；
+10. 自带独立中文翻译包 `geodevkit_zh_CN.qm`，**不改动官方 `od_zh_CN.qm`**，切英文界面自动回退英文原文。
 
-> P2 中「测线剖面矢量 DXF（沿剖面采样层位/断层）」与「统一编辑撤销/版本管理」仍为后续项：前者与 2D 视图渲染强耦合（当前以剖面 PNG 交付），后者属框架级改动，建议二期。层位自动追踪（`Horizon3DTracker`）与 viewer 数据缓存强绑定，同样留待结合具体工作流再封装。
+> P2 仅剩「统一编辑撤销/版本管理」为后续项（框架级改动，建议二期）。层位自动追踪（`Horizon3DTracker`）与 viewer 数据缓存强绑定，留待结合具体工作流再封装。剖面矢量 DXF 的断层部分当前只画已拾取的棍节点（不补棍段与剖面的插值交点），如需真实交点可后续接入 `FaultTrcDataProvider::getFaultZVals`。
 
 ## 快速开始（本机）
 

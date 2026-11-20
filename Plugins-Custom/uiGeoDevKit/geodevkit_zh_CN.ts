@@ -32,6 +32,14 @@
         <translation>导出二维剖面图片...</translation>
     </message>
     <message>
+        <source>Build Fault Surface from Sticks...</source>
+        <translation>断层棍生成断层面...</translation>
+    </message>
+    <message>
+        <source>Export Section as Vector DXF...</source>
+        <translation>剖面导出为矢量 DXF...</translation>
+    </message>
+    <message>
         <source>About This Toolkit...</source>
         <translation>关于本工具包...</translation>
     </message>
@@ -473,6 +481,180 @@
     <message>
         <source>The current survey is ready for time-depth conversion.</source>
         <translation>当前工区已具备时深转换条件。</translation>
+    </message>
+</context>
+<context>
+    <name>uiGeoDevKitBuildFaultDlg</name>
+    <message>
+        <source>Build Fault Surface from Sticks</source>
+        <translation>断层棍生成断层面</translation>
+    </message>
+    <message>
+        <source>Merge fault sticks picked on multiple sections into one 3D fault surface</source>
+        <translation>将多条剖面上拾取的断层棍合并为一个三维断层面</translation>
+    </message>
+    <message>
+        <source>Output fault name</source>
+        <translation>输出断层名称</translation>
+    </message>
+    <message>
+        <source>Build fault surface</source>
+        <translation>生成断层面</translation>
+    </message>
+    <message>
+        <source>Please select at least one fault stick set.</source>
+        <translation>请至少选择一个断层棍集合。</translation>
+    </message>
+    <message>
+        <source>Please enter an output fault name.</source>
+        <translation>请输入输出断层名称。</translation>
+    </message>
+    <message>
+        <source>Cannot create a temporary fault stick container.</source>
+        <translation>无法创建临时断层棍容器。</translation>
+    </message>
+    <message>
+        <source>The selected stick sets contain fewer than two sticks in total. At least two sticks are required to build a fault surface.</source>
+        <translation>所选断层棍集合的棍总数不足两根。生成断层面至少需要两根断层棍。</translation>
+    </message>
+    <message>
+        <source>Cannot create the output fault object.</source>
+        <translation>无法创建输出断层对象。</translation>
+    </message>
+    <message>
+        <source>The kernel failed to convert sticks into a fault surface. Check the picked sticks and try again.</source>
+        <translation>内核未能将断层棍转换为断层面。请检查拾取的断层棍后重试。</translation>
+    </message>
+    <message>
+        <source>The fault surface was built but could not be saved to the survey. Check disk permissions.</source>
+        <translation>断层面已生成，但无法保存到工区。请检查磁盘写入权限。</translation>
+    </message>
+    <message>
+        <source>Fault surface built and saved.</source>
+        <translation>断层面已生成并保存。</translation>
+    </message>
+    <message>
+        <source>Output name: %1</source>
+        <translation>输出名称：%1</translation>
+    </message>
+    <message>
+        <source>Source stick sets: %1</source>
+        <translation>源断层棍集合数：%1</translation>
+    </message>
+    <message>
+        <source>Total sticks merged: %1</source>
+        <translation>合并断层棍总数：%1</translation>
+    </message>
+</context>
+<context>
+    <name>uiGeoDevKitSectionDXFDlg</name>
+    <message>
+        <source>Export Section as Vector DXF</source>
+        <translation>剖面导出为矢量 DXF</translation>
+    </message>
+    <message>
+        <source>Sample horizons and faults along an inline, xline or 2D survey line and write layered DXF</source>
+        <translation>沿 Inline、Xline 或二维测线采样层位与断层，输出分层 DXF</translation>
+    </message>
+    <message>
+        <source>Section type</source>
+        <translation>剖面类型</translation>
+    </message>
+    <message>
+        <source>3D Inline</source>
+        <translation>三维 Inline（主测线）</translation>
+    </message>
+    <message>
+        <source>3D Crossline</source>
+        <translation>三维 Crossline（联络测线）</translation>
+    </message>
+    <message>
+        <source>2D survey line</source>
+        <translation>二维测线</translation>
+    </message>
+    <message>
+        <source>2D line</source>
+        <translation>二维测线</translation>
+    </message>
+    <message>
+        <source>Inline number</source>
+        <translation>Inline 号</translation>
+    </message>
+    <message>
+        <source>Crossline number</source>
+        <translation>Crossline 号</translation>
+    </message>
+    <message>
+        <source>Output file base name</source>
+        <translation>输出文件名前缀</translation>
+    </message>
+    <message>
+        <source>Export section DXF</source>
+        <translation>导出剖面 DXF</translation>
+    </message>
+    <message>
+        <source>The survey has no traces in that direction.</source>
+        <translation>当前工区在该方向上没有可用道。</translation>
+    </message>
+    <message>
+        <source>No 2D survey line is available. Load a 2D line first.</source>
+        <translation>当前没有可用的二维测线。请先加载二维测线。</translation>
+    </message>
+    <message>
+        <source>Please select a valid 2D survey line.</source>
+        <translation>请选择有效的二维测线。</translation>
+    </message>
+    <message>
+        <source>The selected line has no trace positions.</source>
+        <translation>所选测线没有道位置信息。</translation>
+    </message>
+    <message>
+        <source>No traces could be found on this section.</source>
+        <translation>在该剖面上未找到任何道。</translation>
+    </message>
+    <message>
+        <source>Please select at least one horizon or fault.</source>
+        <translation>请至少选择一个层位或断层。</translation>
+    </message>
+    <message>
+        <source>Section: %1</source>
+        <translation>剖面：%1</translation>
+    </message>
+    <message>
+        <source>Traces sampled: %1</source>
+        <translation>采样道数：%1</translation>
+    </message>
+    <message>
+        <source>Horizon polylines: %1 -&gt; %2</source>
+        <translation>层位折线：%1 → %2</translation>
+    </message>
+    <message>
+        <source>Fault sticks on section: %1 -&gt; %2</source>
+        <translation>剖面上断层棍：%1 → %2</translation>
+    </message>
+    <message>
+        <source>No horizon or fault data was found on this section. Check the line number / selected objects.</source>
+        <translation>在该剖面上未找到层位或断层数据。请检查测线编号与所选对象。</translation>
+    </message>
+    <message>
+        <source>Export section as DXF</source>
+        <translation>将剖面导出为 DXF</translation>
+    </message>
+    <message>
+        <source>DXF entities written: %1</source>
+        <translation>已写入 DXF 实体：%1</translation>
+    </message>
+    <message>
+        <source>Saved to: %1</source>
+        <translation>保存位置：%1</translation>
+    </message>
+    <message>
+        <source>Note: X = distance along section [m], Z = horizon/fault value; fault sticks show picked knots only.</source>
+        <translation>说明：X = 沿剖面距离（米），Z = 层位/断层值；断层仅显示已拾取的棍节点。</translation>
+    </message>
+    <message>
+        <source>Section DXF exported successfully.</source>
+        <translation>剖面 DXF 导出成功。</translation>
     </message>
 </context>
 </TS>
