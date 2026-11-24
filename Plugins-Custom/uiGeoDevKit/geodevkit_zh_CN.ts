@@ -67,6 +67,30 @@
         <source>3D Volume DWT Decomposition...</source>
         <translation>三维地震体小波分解...</translation>
     </message>
+    <message>
+        <source>Machine Learning</source>
+        <translation>机器学习</translation>
+    </message>
+    <message>
+        <source>Machine Learning Control Center (UI Shell)...</source>
+        <translation>机器学习控制中心（界面占位）...</translation>
+    </message>
+    <message>
+        <source>Tabbed Views (Custom)</source>
+        <translation>标签页视窗（定制）</translation>
+    </message>
+    <message>
+        <source>New Tabbed View...</source>
+        <translation>新建标签视窗...</translation>
+    </message>
+    <message>
+        <source>Tabbed View</source>
+        <translation>标签页视图</translation>
+    </message>
+    <message>
+        <source>Tile Views (Classic)</source>
+        <translation>平铺视窗（原有）</translation>
+    </message>
 </context>
 <context>
     <name>uiGeoDevKitInfoDlg</name>
@@ -766,6 +790,403 @@
     <message>
         <source>DWT decomposition finished with errors. See the run log.</source>
         <translation>小波分解过程中出现错误，请查看运行日志。</translation>
+    </message>
+</context>
+<context>
+    <name>uiGeoDevKitMLCenterDlg</name>
+    <message>
+        <source>Project</source>
+        <translation>工程</translation>
+    </message>
+    <message>
+        <source>Machine Learning Control Center (UI Shell)</source>
+        <translation>机器学习控制中心（界面占位）</translation>
+    </message>
+    <message>
+        <source>Geological interpretation - self-developed UI placeholder</source>
+        <translation>地质解释——自研界面占位</translation>
+    </message>
+    <message>
+        <source>Input source</source>
+        <translation>输入来源</translation>
+    </message>
+    <message>
+        <source>Wells</source>
+        <translation>井</translation>
+    </message>
+    <message>
+        <source>Seismic</source>
+        <translation>地震</translation>
+    </message>
+    <message>
+        <source>Seismic + Wells</source>
+        <translation>地震+井</translation>
+    </message>
+    <message>
+        <source>Pre-trained Models</source>
+        <translation>预训练模型</translation>
+    </message>
+    <message>
+        <source>Neural Networks</source>
+        <translation>神经网络</translation>
+    </message>
+    <message>
+        <source>3D Seismic</source>
+        <translation>三维地震</translation>
+    </message>
+    <message>
+        <source>Horizon-based Seismic Facies</source>
+        <translation>基于层位的地震相分析</translation>
+    </message>
+    <message>
+        <source>Seismic Classification (Supervised)</source>
+        <translation>有监督地震分类</translation>
+    </message>
+    <message>
+        <source>Seismic Image Segmentation</source>
+        <translation>地震图像分割</translation>
+    </message>
+    <message>
+        <source>Seismic Image Regression</source>
+        <translation>地震图像回归</translation>
+    </message>
+    <message>
+        <source>Go ...</source>
+        <translation>转到...</translation>
+    </message>
+    <message>
+        <source>Using self-developed UI shell - Python backend not connected</source>
+        <translation>使用自研界面占位——Python 后端未接入</translation>
+    </message>
+    <message>
+        <source>%1 is listed in the requirement screenshot but is out of this shell's scope. Only Seismic Image Segmentation and Regression are previewed here.</source>
+        <translation>%1 出现在需求截图中，但不在本占位界面范围内。此处仅预览地震图像分割与回归。</translation>
+    </message>
+</context>
+<context>
+    <name>uiGeoDevKitMLWizDlg</name>
+    <message>
+        <source>Seismic Image Segmentation - 3D</source>
+        <translation>地震图像分割——三维</translation>
+    </message>
+    <message>
+        <source>Seismic Image Regression - 3D</source>
+        <translation>地震图像回归——三维</translation>
+    </message>
+    <message>
+        <source>Extract / Train / Apply - UI shell, algorithm not connected</source>
+        <translation>样本提取 / 模型训练 / 模型应用——界面占位，算法未接入</translation>
+    </message>
+    <message>
+        <source>New</source>
+        <translation>新建</translation>
+    </message>
+    <message>
+        <source>Open ...</source>
+        <translation>打开...</translation>
+    </message>
+    <message>
+        <source>Save</source>
+        <translation>保存</translation>
+    </message>
+    <message>
+        <source>Filter</source>
+        <translation>过滤</translation>
+    </message>
+    <message>
+        <source>Seismic Data</source>
+        <translation>地震数据</translation>
+    </message>
+    <message>
+        <source>KAIYUAN_Inline_290_D4_corr</source>
+        <translation>KAIYUAN_Inline_290_D4_corr</translation>
+    </message>
+    <message>
+        <source>Prestack_seismic</source>
+        <translation>Prestack_seismic</translation>
+    </message>
+    <message>
+        <source>Select ...</source>
+        <translation>选择...</translation>
+    </message>
+    <message>
+        <source>Target Data</source>
+        <translation>目标数据</translation>
+    </message>
+    <message>
+        <source>Label mask / horizon attribute</source>
+        <translation>标签掩码 / 层位属性</translation>
+    </message>
+    <message>
+        <source>Import labels and keep sample size one-to-one with the seismic data.</source>
+        <translation>导入标签，并确保与地震数据的样本大小一一对应。</translation>
+    </message>
+    <message>
+        <source>Extract for</source>
+        <translation>提取目标</translation>
+    </message>
+    <message>
+        <source>3D model</source>
+        <translation>三维模型</translation>
+    </message>
+    <message>
+        <source>2D model</source>
+        <translation>二维模型</translation>
+    </message>
+    <message>
+        <source>Image dimensions (nr)</source>
+        <translation>图像尺寸（nr）</translation>
+    </message>
+    <message>
+        <source>Image dimensions (z)</source>
+        <translation>图像尺寸（z）</translation>
+    </message>
+    <message>
+        <source>Symmetric</source>
+        <translation>对称</translation>
+    </message>
+    <message>
+        <source>Selection</source>
+        <translation>选择</translation>
+    </message>
+    <message>
+        <source>Range</source>
+        <translation>范围</translation>
+    </message>
+    <message>
+        <source># images</source>
+        <translation>图像数</translation>
+    </message>
+    <message>
+        <source>Selection 1</source>
+        <translation>选择 1</translation>
+    </message>
+    <message>
+        <source>426-426, 700-1200, 400-400</source>
+        <translation>426-426, 700-1200, 400-400</translation>
+    </message>
+    <message>
+        <source>15 x (inl: 1 crl: 32 z: 32)</source>
+        <translation>15 x (inl: 1 crl: 32 z: 32)</translation>
+    </message>
+    <message>
+        <source>Extract along</source>
+        <translation>沿方向提取</translation>
+    </message>
+    <message>
+        <source>In-line</source>
+        <translation>主测线</translation>
+    </message>
+    <message>
+        <source>Cross-line</source>
+        <translation>联络测线</translation>
+    </message>
+    <message>
+        <source>In-line range</source>
+        <translation>主测线范围</translation>
+    </message>
+    <message>
+        <source>Cross-line range</source>
+        <translation>联络测线范围</translation>
+    </message>
+    <message>
+        <source>Time range (ms)</source>
+        <translation>时间范围（毫秒）</translation>
+    </message>
+    <message>
+        <source>426 - 426</source>
+        <translation>426 - 426</translation>
+    </message>
+    <message>
+        <source>700 - 1200</source>
+        <translation>700 - 1200</translation>
+    </message>
+    <message>
+        <source>400 - 448</source>
+        <translation>400 - 448</translation>
+    </message>
+    <message>
+        <source>Step / Overlap (%) / Shift</source>
+        <translation>步长 / 重叠率（%）/ 平移</translation>
+    </message>
+    <message>
+        <source>2 / 50 / 2</source>
+        <translation>2 / 50 / 2</translation>
+    </message>
+    <message>
+        <source>Total number of images</source>
+        <translation>图像总数</translation>
+    </message>
+    <message>
+        <source>Expected dataset size</source>
+        <translation>预期数据集大小</translation>
+    </message>
+    <message>
+        <source>120.00 kB</source>
+        <translation>120.00 kB</translation>
+    </message>
+    <message>
+        <source>Output Deep Learning Example Data</source>
+        <translation>输出深度学习样本数据</translation>
+    </message>
+    <message>
+        <source>Extract</source>
+        <translation>提取样本</translation>
+    </message>
+    <message>
+        <source>UI shell only - no algorithm is connected; no data is written.</source>
+        <translation>仅为界面占位——未接入算法，不会写入数据。</translation>
+    </message>
+    <message>
+        <source>Input Deep Learning Example Data</source>
+        <translation>输入深度学习样本数据</translation>
+    </message>
+    <message>
+        <source>Training Type</source>
+        <translation>训练类型</translation>
+    </message>
+    <message>
+        <source>Other</source>
+        <translation>其他</translation>
+    </message>
+    <message>
+        <source>Training mode</source>
+        <translation>训练模式</translation>
+    </message>
+    <message>
+        <source>Resume</source>
+        <translation>续训</translation>
+    </message>
+    <message>
+        <source>Transfer</source>
+        <translation>迁移学习</translation>
+    </message>
+    <message>
+        <source>Output Deep Learning Model</source>
+        <translation>输出深度学习模型</translation>
+    </message>
+    <message>
+        <source>model</source>
+        <translation>model</translation>
+    </message>
+    <message>
+        <source>Training</source>
+        <translation>训练参数</translation>
+    </message>
+    <message>
+        <source>Parameters</source>
+        <translation>参数</translation>
+    </message>
+    <message>
+        <source>Advanced</source>
+        <translation>高级</translation>
+    </message>
+    <message>
+        <source>dGB UNet Segmentation</source>
+        <translation>dGB UNet 分割</translation>
+    </message>
+    <message>
+        <source>dGB UNet Regression</source>
+        <translation>dGB UNet 回归</translation>
+    </message>
+    <message>
+        <source>Validation Split</source>
+        <translation>验证集比例</translation>
+    </message>
+    <message>
+        <source>0.20</source>
+        <translation>0.20</translation>
+    </message>
+    <message>
+        <source>Batch Size</source>
+        <translation>批大小</translation>
+    </message>
+    <message>
+        <source>Epochs</source>
+        <translation>训练轮数</translation>
+    </message>
+    <message>
+        <source>Early Stopping</source>
+        <translation>早停轮数</translation>
+    </message>
+    <message>
+        <source>Initial Learning Rate (1e)</source>
+        <translation>初始学习率（1e）</translation>
+    </message>
+    <message>
+        <source>Epoch drop (%)</source>
+        <translation>轮次衰减（%）</translation>
+    </message>
+    <message>
+        <source>33.33</source>
+        <translation>33.33</translation>
+    </message>
+    <message>
+        <source>Random seed</source>
+        <translation>随机种子</translation>
+    </message>
+    <message>
+        <source>Decimate Input</source>
+        <translation>输入抽稀</translation>
+    </message>
+    <message>
+        <source>Advanced network parameters will appear here when the algorithm backend is connected in P3.</source>
+        <translation>P3 接入算法后端后，此处将显示高级网络参数。</translation>
+    </message>
+    <message>
+        <source>Advanced options are reserved for the P3 algorithm backend.</source>
+        <translation>高级选项预留给 P3 算法后端。</translation>
+    </message>
+    <message>
+        <source>Reset</source>
+        <translation>重置</translation>
+    </message>
+    <message>
+        <source>Back</source>
+        <translation>返回</translation>
+    </message>
+    <message>
+        <source>Train</source>
+        <translation>训练模型</translation>
+    </message>
+    <message>
+        <source>Input seismic volume</source>
+        <translation>输入地震体</translation>
+    </message>
+    <message>
+        <source>Output volume</source>
+        <translation>输出地震体</translation>
+    </message>
+    <message>
+        <source>segmentation_result</source>
+        <translation>segmentation_result</translation>
+    </message>
+    <message>
+        <source>regression_result</source>
+        <translation>regression_result</translation>
+    </message>
+    <message>
+        <source>Segmentation outputs a 0/1 label volume.</source>
+        <translation>分割输出 0/1 标签体。</translation>
+    </message>
+    <message>
+        <source>Regression outputs a continuous prediction volume.</source>
+        <translation>回归输出连续预测体。</translation>
+    </message>
+    <message>
+        <source>Apply</source>
+        <translation>应用模型</translation>
+    </message>
+    <message>
+        <source>This is a UI shell rebuilt from the requirement screenshots. No data is read or written, no training or inference runs.
+
+The real algorithm backend will be added in P3 after the client confirms:/n  D1 - self-developed PyTorch U-Net vs. dGB commercial license;
+  D4 - labelled training samples and their format.</source>
+        <translation>这是按需求截图重建的界面占位。不会读取或写入数据，也不会运行训练或推理。
+
+真正的算法后端将在 P3 阶段、甲方确认以下事项后接入：
+  D1——自研 PyTorch U-Net 还是购买 dGB 商业授权；
+  D4——带标注的训练样本及其格式。</translation>
     </message>
 </context>
 </TS>

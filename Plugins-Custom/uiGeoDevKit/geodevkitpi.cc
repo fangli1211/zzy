@@ -34,8 +34,11 @@ ________________________________________________________________________
 #include "uigeodevkitbuildfault.h"
 #include "uigeodevkitsectiondxf.h"
 #include "uigeodevkitdwt.h"
+#include "uigeodevkitml.h"
+#include "uigeodevkitmdi.h"
 
 #include "callback.h"
+#include "commondefs.h"
 #include "odplugin.h"
 #include "ptrman.h"
 #include "uimenu.h"
@@ -93,7 +96,13 @@ private:
     void		showBuildFaultDlg(CallBacker*);
     void		showSectionDXFDlg(CallBacker*);
     void		showDWTDlg(CallBacker*);
+    void		showMLDlg(CallBacker*);
     void		showAbout(CallBacker*);
+
+    // 主窗口内标签页视窗（原生 3D 视窗 + Qt 原生标签栏）
+    void		newTabbedView(CallBacker*);
+    void		showTabbedView(CallBacker*);
+    void		tileClassicViews(CallBacker*);
 };
 
 
@@ -141,6 +150,32 @@ void uiGeoDevKitMgr::dTectMenuChanged()
 
     // addMenu 会把 uiMenu 的所有权交给 utilMnu()
     appl().menuMgr().utilMnu()->addMenu( mnu );
+
+    // P3 占位：Analysis -> Machine Learning。
+    // fillAnalMenu() 会 clear() 该菜单，但 dTectMnuChanged 在 fillAnalMenu
+    // 之后 trigger，因此这里挂的子菜单不会被冲掉（uiodmenumgr.cc:1933-1938）。
+    uiMenu* mlmnu = new uiMenu( tr("Machine Learning") );
+    mlmnu->insertAction( new uiAction(
+		tr("Machine Learning Control Center (UI Shell)..."),
+		mCB(this,uiGeoDevKitMgr,showMLDlg) ) );
+    appl().menuMgr().analMnu()->addMenu( mlmnu );
+
+    // 主窗口内标签页视窗：挂在「Scenes / 视窗」菜单下。
+    // 只做视窗本身 —— 新建真正的 3D 视窗、切换原生标签栏、切回原有平铺，
+    // 不带任何工具栏 / 图片 / 底图 / 状态栏等自定义 UI。
+    // fillSceneMenu() 每次先 clear() 再重建，dTectMnuChanged 在 clear
+    // 之后 trigger，因此这里挂的子菜单不会被冲掉（uiodmenumgr.cc:1935-1938）。
+    uiMenu* tabmnu = new uiMenu( tr("Tabbed Views (Custom)") );
+    uiAction* newvact = new uiAction( tr("New Tabbed View..."),
+		mCB(this,uiGeoDevKitMgr,newTabbedView) );
+    newvact->setShortcut( "Ctrl+Alt+N" );
+    tabmnu->insertAction( newvact );
+    tabmnu->insertSeparator();
+    tabmnu->insertAction( new uiAction( tr("Tabbed View"),
+		mCB(this,uiGeoDevKitMgr,showTabbedView) ) );
+    tabmnu->insertAction( new uiAction( tr("Tile Views (Classic)"),
+		mCB(this,uiGeoDevKitMgr,tileClassicViews) ) );
+    appl().menuMgr().sceneMnu()->addMenu( tabmnu );
 }
 
 
@@ -243,6 +278,13 @@ void uiGeoDevKitMgr::showDWTDlg( CallBacker* )
 }
 
 
+void uiGeoDevKitMgr::showMLDlg( CallBacker* )
+{
+    uiGeoDevKitMLCenterDlg dlg( &appl() );
+    dlg.go();
+}
+
+
 void uiGeoDevKitMgr::showAbout( CallBacker* )
 {
     uiMSG().message( tr(
@@ -253,12 +295,35 @@ void uiGeoDevKitMgr::showAbout( CallBacker* )
 }
 
 
+void uiGeoDevKitMgr::newTabbedView( CallBacker* )
+{
+    GeoDevKitTabWin::newView();
+}
+
+
+void uiGeoDevKitMgr::showTabbedView( CallBacker* )
+{
+    GeoDevKitTabWin::setTabbed( true );
+}
+
+
+void uiGeoDevKitMgr::tileClassicViews( CallBacker* )
+{
+    GeoDevKitTabWin::tileViews();
+}
+
+
 mDefODInitPlugin(uiGeoDevKit)
 {
     mDefineStaticLocalObject( PtrMan<uiGeoDevKitMgr>, theinst_,
 				= new uiGeoDevKitMgr() );
     if ( !theinst_ )
 	return "Cannot instantiate the uiGeoDevKit plugin";
+
+    // 标签页视窗由「视窗 → 标签页视窗（定制）」菜单显式触发，
+    // 插件加载时不对主窗口做任何改动，原生平铺视窗行为完全不变。
+    // 仅当显式设置 OD_GEODEVKIT_TABBED=1 时才在启动后自动新建一个标签视窗。
+    GeoDevKitTabWin::maybeAutoStart();
 
     return nullptr; // nullptr 表示加载成功
 }

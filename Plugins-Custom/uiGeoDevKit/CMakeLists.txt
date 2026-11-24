@@ -28,6 +28,8 @@ set( OD_MODULE_SOURCES
     uigeodevkitsectiondxf.cc
     geodevkitdwt.cc
     uigeodevkitdwt.cc
+    uigeodevkitml.cc
+    uigeodevkitmdi.cc
 )
 
 set( OD_MODULE_INCFILES
@@ -41,6 +43,8 @@ set( OD_MODULE_INCFILES
     uigeodevkitsectiondxf.h
     geodevkitdwt.h
     uigeodevkitdwt.h
+    uigeodevkitml.h
+    uigeodevkitmdi.h
 )
 
 set( OD_PLUGIN_ALO_EXEC ${OD_MAIN_EXEC} )
